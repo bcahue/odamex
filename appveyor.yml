@@ -7,6 +7,11 @@ version: 0.8.{build}
 pull_requests:
   do_not_increment_build_number: true
 configuration: RelWithDebInfo
+
+install:
+  - choco install -y innosetup
+  - set PATH="C:\Program Files (x86)\Inno Setup 5";%PATH%
+
 build:
   project: build\Odamex.sln
   verbosity: minimal
@@ -14,6 +19,7 @@ before_build:
   - ps: .\appveyor_before_build.ps1
 after_build:
   - ps: .\appveyor_after_build.ps1
+  - iscc .\installer\windows\odamex.iss /DPWD=%CD% /Obuild
 
 ### artifacts config ###
 
