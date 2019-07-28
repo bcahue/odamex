@@ -72,11 +72,11 @@ Name: libs; Description: Libraries (SDL 2.0.5, SDL_Mixer 2.0.1); Types: full com
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 64-BIT FILES
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-Source: ..\..\build\odamex.exe; DestDir: {app}; Flags: ignoreversion; Components: client; Check: Is64BitInstallMode
-Source: ..\..\build\odamex.pdb; DestDir: {app}; Flags: ignoreversion; Components: client; Check: Is64BitInstallMode
-Source: ..\..\build\odasrv.exe; DestDir: {app}; Flags: ignoreversion; Components: server; Check: Is64BitInstallMode
-Source: ..\..\build\SDL2.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
-Source: ..\..\build\SDL2_mixer.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
+Source: ..\..\build\client\RelWithDebInfo\odamex.exe; DestDir: {app}; Flags: ignoreversion; Components: client; Check: Is64BitInstallMode
+Source: ..\..\build\client\RelWithDebInfo\odamex.pdb; DestDir: {app}; Flags: ignoreversion; Components: client; Check: Is64BitInstallMode
+Source: ..\..\build\server\RelWithDebInfo\odasrv.exe; DestDir: {app}; Flags: ignoreversion; Components: server; Check: Is64BitInstallMode
+Source: ..\..\build\SDL2-2.0.5\lib\x86\SDL2.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
+Source: ..\..\build\SDL2_mixer-2.0.1\lib\x86\SDL2_mixer.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
 Source: ..\..\build\libogg-0.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
 Source: ..\..\build\smpeg2.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
 Source: ..\..\build\libvorbis-0.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: Is64BitInstallMode
@@ -86,11 +86,11 @@ Source: ..\..\build\libmikmod-2.dll; DestDir: {app}; Flags: ignoreversion; Compo
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 32-BIT FILES
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-Source: ..\..\build\odamex.exe; DestDir: {app}; Flags: ignoreversion; Components: client; Check: not Is64BitInstallMode
-Source: ..\..\build\odamex.pdb; DestDir: {app}; Flags: ignoreversion; Components: client; Check: not Is64BitInstallMode
-Source: ..\..\build\odasrv.exe; DestDir: {app}; Flags: ignoreversion; Components: server; Check: not Is64BitInstallMode
-Source: ..\..\build\SDL2.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
-Source: ..\..\build\SDL2_mixer.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
+Source: ..\..\build\client\RelWithDebInfo\odamex.exe; DestDir: {app}; Flags: ignoreversion; Components: client; Check: not Is64BitInstallMode
+Source: ..\..\build\client\RelWithDebInfo\odamex.pdb; DestDir: {app}; Flags: ignoreversion; Components: client; Check: not Is64BitInstallMode
+Source: ..\..\build\server\RelWithDebInfo\odasrv.exe; DestDir: {app}; Flags: ignoreversion; Components: server; Check: not Is64BitInstallMode
+Source: ..\..\build\SDL2-2.0.5\lib\x86\SDL2.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
+Source: ..\..\build\SDL2_mixer-2.0.1\lib\x86\SDL2_mixer.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
 Source: ..\..\build\libogg-0.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
 Source: ..\..\build\smpeg2.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
 Source: ..\..\build\libvorbis-0.dll; DestDir: {app}; Flags: ignoreversion; Components: libs; Check: not Is64BitInstallMode
