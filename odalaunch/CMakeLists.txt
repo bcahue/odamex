@@ -43,7 +43,62 @@ if(wxWidgets_FOUND)
   target_link_libraries(odalaunch ${wxWidgets_LIBRARIES})
 
   if(WIN32)
-    target_link_libraries(odalaunch ws2_32)
+    if (wxWidgets_CONFIGURATION STREQUAL mswu)
+      target_link_libraries(odalaunch
+        ${WX_xrc} 
+        ${WX_adv} 
+        ${WX_html} 
+        ${WX_core} 
+        ${WX_base} 
+        ${WX_net} 
+        ${WX_xml}
+        ${WX_png}
+        ${WX_tiff}
+        ${WX_jpeg}
+        ${WX_zlib}
+        ${WX_regex}
+        ${WX_expat})
+    elseif(wxWidgets_CONFIGURATION STREQUAL mswud)
+      target_link_libraries(odalaunch
+        ${WX_xrcd} 
+        ${WX_advd} 
+        ${WX_htmld} 
+        ${WX_cored} 
+        ${WX_based} 
+        ${WX_netd} 
+        ${WX_xmld}
+        ${WX_pngd}
+        ${WX_tiffd}
+        ${WX_jpegd}
+        ${WX_zlibd}
+        ${WX_regexd}
+        ${WX_expatd})
+    endif()
+    target_link_libraries(odalaunch 
+      -lws2_32
+      -lshlwapi
+      -lversion
+      -lkernel32
+      -luser32
+      -lgdi32
+      -lwinspool
+      -lwinmm
+      -lshell32
+      -lcomdlg32
+      -lcomctl32
+      -loleaut32
+      -lole32
+      -luuid
+      -lrpcrt4
+      -lodbc32
+      -ladvapi32
+      -lwsock32
+      -loleacc
+      -luxtheme)
+    add_definitions(-D__GNUWIN32__ -D__WXMSW__ -DHAVE_W32API_H -DwxUSE_UNICODE -DUSE_PCH)
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS} -Wno-deprecated-declarations -pipe -mthreads -fmessage-length=0 -fexceptions")
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS} -include \"wx_pch.h\"")
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS} -Winvalid-pch -Wno-long-long -fno-optimize-sibling-calls")
   endif()
 
   set(MACOSX_BUNDLE_BUNDLE_NAME OdaLaunch)
