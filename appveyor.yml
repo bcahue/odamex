@@ -3,7 +3,7 @@
 image: Visual Studio 2015
 
 ### build config ###
-version: 0.8.{build}
+version: 0.8.1.{build}
 pull_requests:
   do_not_increment_build_number: true
 configuration: RelWithDebInfo
@@ -13,6 +13,8 @@ install:
   - set PATH="C:\Program Files (x86)\Inno Setup 5";%PATH%
 
 build:
+  - ps: .\appveyor_build_launcher.ps1
+  - ps: .\appveyor_cmake_odamex.ps1
   project: build\Odamex.sln
   verbosity: minimal
 before_build:
