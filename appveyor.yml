@@ -13,8 +13,6 @@ install:
   - set PATH="C:\Program Files (x86)\Inno Setup 5";%PATH%
 
 build:
-  - ps: .\appveyor_build_launcher.ps1
-  - ps: .\appveyor_cmake_odamex.ps1
   project: build\Odamex.sln
   verbosity: minimal
 before_build:
