@@ -53,6 +53,39 @@ if [[ ! -d "build" ]]; then
     cmake --build "build"
 fi
 
+# Assemble the client AppDir.
+
+if [[ ! -d "odamex.AppDir" ]]; then
+    echo >&2 "==> Assembling odamex AppDir..."
+
+    mkdir -p "odamex.AppDir/usr/bin"
+    mkdir -p "odamex.AppDir/usr/lib"
+    mkdir -p "odamex.AppDir/usr/share/applications"
+    mkdir -p "odamex.AppDir/usr/share/icons/hicolor/96x96/apps"
+    mkdir -p "odamex.AppDir/usr/share/icons/hicolor/128x128/apps"
+    mkdir -p "odamex.AppDir/usr/share/icons/hicolor/256x256/apps"
+    mkdir -p "odamex.AppDir/usr/share/icons/hicolor/512x512/apps"
+
+    cp -v "build/client/odamex" "odamex.AppDir/usr/bin"
+    cp -v "build/wad/odamex.wad" "odamex.AppDir/usr/bin"
+    cp -v "odamex.desktop" "odamex.AppDir/usr/share/applications"
+    cp -v "../../media/icon_odamex_96.png" \
+        "odamex.AppDir/usr/share/icons/hicolor/96x96/apps/odamex.png"
+    cp -v "../../media/icon_odamex_128.png" \
+        "odamex.AppDir/usr/share/icons/hicolor/128x128/apps/odamex.png"
+    cp -v "../../media/icon_odamex_256.png" \
+        "odamex.AppDir/usr/share/icons/hicolor/256x256/apps/odamex.png"
+    cp -v "../../media/icon_odamex_512.png" \
+        "odamex.AppDir/usr/share/icons/hicolor/512x512/apps/odamex.png"
+
+    ln -sv "usr/bin/odamex" "odamex.AppDir/AppRun"
+    ln -sv "usr/share/applications/odamex.desktop" "odamex.AppDir/odamex.desktop"
+    ln -sv "usr/share/icons/hicolor/512x512/apps/odamex.png" "odamex.AppDir/.DirIcon"
+    ln -sv "usr/share/icons/hicolor/512x512/apps/odamex.png" "odamex.AppDir/odamex.png"
+
+    "./$APPIMAGE_BIN" "odamex.AppDir"
+fi
+
 # Assemble the server AppDir.
 
 if [[ ! -d "odasrv.AppDir" ]]; then
