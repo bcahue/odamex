@@ -247,6 +247,16 @@ std::vector<std::string> M_FileSearchDirs()
 	dirs.push_back(M_GetCWD());
 	dirs.push_back(M_GetBinaryDir());
 
+	// [AM] If we're in an appimage, add the "real" executable dir so we
+	//      can find our packaged odamex.wad.
+	const char* APPDIR = getenv("APPDIR");
+	if (APPDIR)
+	{
+		std::string buffer(APPDIR);
+		buffer += "/usr/bin";
+		D_AddSearchDir(dirs, buffer.c_str(), PATHLISTSEPCHAR);
+	}
+
 	#ifdef __SWITCH__
 	dirs.push_back("./wads");
 	#endif
