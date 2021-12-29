@@ -1176,4 +1176,49 @@ unsigned int SlopeDiv (unsigned int num, unsigned int den)
 	return ans <= SLOPERANGE ? ans : SLOPERANGE;
 }
 
+const byte& V_BloodColorTable(int blood)
+{
+	switch ((blood_color_t)blood)
+	{
+	case BCR_NORMAL:
+		return 0;
+		break;
+	case BCR_GRAY:
+		return graybctable[0];
+		break;
+	case BCR_GREEN:
+		return greenbctable[0];
+		break;
+	case BCR_BLUE:
+		return bluebctable[0];
+		break;
+	case BCR_YELLOW:
+		return yellowbctable[0];
+		break;
+	case BCR_BLACK:
+		return blackbctable[0];
+		break;
+	case BCR_PURPLE:
+		return purplebctable[0];
+		break;
+	case BCR_WHITE:
+		return whitebctable[0];
+		break;
+	case BCR_ORANGE:
+		return orangebctable[0];
+		break;
+	default:
+		return 0;
+		break;
+	}
+}
+
+int V_BloodColor(int blood)
+{
+	if (blood < 0 || blood > 8)
+		blood = 0;
+
+	return (blood_color_t)blood;
+}
+
 VERSION_CONTROL (r_data_cpp, "$Id$")

@@ -255,6 +255,37 @@ static void R_BuildFontTranslation(int color_num, argb_t start_color, argb_t end
 	dest[0x2C] = dest[0x2D] = dest[0x2F] = dest[end_index];
 }
 
+static void R_BuildBloodTranslation(int bloodcolor_num, argb_t bloodstart_color, argb_t bloodend_color)
+{
+	const palindex_t start_index = 0xB0;
+	const palindex_t end_index = 0xBF;
+	const int index_range = end_index - start_index + 1;
+
+	palindex_t* dest = (palindex_t*)Ranges + bloodcolor_num * 256;
+
+	for (int index = 0; index < start_index; index++)
+		dest[index] = index;
+	for (int index = end_index + 1; index < 256; index++)
+		dest[index] = index;
+
+	int r_diff = bloodend_color.getr() - bloodstart_color.getr();
+	int g_diff = bloodend_color.getg() - bloodstart_color.getg();
+	int b_diff = bloodend_color.getb() - bloodstart_color.getb();
+
+	for (palindex_t index = start_index; index <= end_index; index++)
+	{
+		int i = index - start_index;
+
+		int r = bloodstart_color.getr() + i * r_diff / index_range;
+		int g = bloodstart_color.getg() + i * g_diff / index_range;
+		int b = bloodstart_color.getb() + i * b_diff / index_range;
+
+		dest[index] = V_BestColor(V_GetDefaultPalette()->basecolors, r, g, b);
+	}
+
+	dest[0x2C] = dest[0x2D] = dest[0x2F] = dest[end_index];
+}
+
 /**
  * @brief Apply a soft light filter using Pegtop's formula.
  * 
@@ -274,37 +305,61 @@ static byte SoftLight(const byte bot, const byte top)
 
 void R_InitBloodColorTranslationTables()
 {
-	for (int i = 0; i > 8; i++)
+	for (int i = 0; i < 8; i++)
 	{
-		argb_t top;
+		argb_t bloodstart_color;
 		switch ((blood_color_t)i)
 		{
 		case BCR_NORMAL:
 			continue;
 			break;
 		case BCR_GRAY:
-			top.setChannels(0xff, 0x96, 0x96, 0x96);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0x96);
+			bloodstart_color.setb(0x96);
+			bloodstart_color.setg(0x96);
 			break;
 		case BCR_GREEN:
-			top.setChannels(0xff, 0x00, 0x7d, 0x2a);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0x00);
+			bloodstart_color.setg(0x7d);
+			bloodstart_color.setb(0x2a);
 			break;
 		case BCR_BLUE:
-			top.setChannels(0xff, 0x00, 0x11, 0xff);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0x00);
+			bloodstart_color.setg(0x11);
+			bloodstart_color.setb(0xff);
 			break;
 		case BCR_YELLOW:
-			top.setChannels(0xff, 0xdd, 0xff, 0x00);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0xdd);
+			bloodstart_color.setg(0xff);
+			bloodstart_color.setb(0x00);
 			break;
 		case BCR_BLACK:
-			top.setChannels(0xff, 0x10, 0x10, 0x10);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0x10);
+			bloodstart_color.setg(0x10);
+			bloodstart_color.setb(0x10);
 			break;
 		case BCR_PURPLE:
-			top.setChannels(0xff, 0x48, 0x00, 0xb5);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0x48);
+			bloodstart_color.setg(0x00);
+			bloodstart_color.setb(0xb5);
 			break;
 		case BCR_WHITE:
-			top.setChannels(0xff, 0xff, 0xff, 0xff);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0xff);
+			bloodstart_color.setg(0xff);
+			bloodstart_color.setb(0xff);
 			break;
 		case BCR_ORANGE:
-			top.setChannels(0xff, 0xff, 0x99, 0x00);
+			bloodstart_color.seta(0xff);
+			bloodstart_color.setr(0xff);
+			bloodstart_color.setg(0x99);
+			bloodstart_color.setb(0x00);
 			break;
 		default:
 			continue;
@@ -313,14 +368,36 @@ void R_InitBloodColorTranslationTables()
 
 		byte bloodtable[256];
 
-		for (size_t i = 0; i < ARRAY_LENGTH(bloodtable); i++)
-		{
-			argb_t bot = V_GetDefaultPalette()->basecolors[i];
-			argb_t mul(SoftLight(bot.getr(), top.getr()),
-			           SoftLight(bot.getg(), top.getg()),
-			           SoftLight(bot.getb(), top.getb()));
+		const palindex_t start_index = 0xB0;
+		const palindex_t end_index = 0xBF;
+		const int index_range = end_index - start_index + 1;
 
-			bloodtable[i] = V_BestColor(V_GetDefaultPalette()->basecolors, mul);
+		for (size_t j = 0; j < ARRAY_LENGTH(bloodtable); j++)
+		{
+			palindex_t* dest =
+			    (palindex_t*)Ranges + R_GetColorForBloodColor() * 256;
+
+			for (int index = 0; index < start_index; index++)
+				dest[index] = index;
+			for (int index = end_index + 1; index < 256; index++)
+				dest[index] = index;
+
+			int r_diff = bloodend_color.getr() - bloodstart_color.getr();
+			int g_diff = bloodend_color.getg() - bloodstart_color.getg();
+			int b_diff = bloodend_color.getb() - bloodstart_color.getb();
+
+			for (palindex_t index = start_index; index <= end_index; index++)
+			{
+				int i = index - start_index;
+
+				int r = bloodstart_color.getr() + i * r_diff / index_range;
+				int g = bloodstart_color.getg() + i * g_diff / index_range;
+				int b = bloodstart_color.getb() + i * b_diff / index_range;
+
+				bloodtable[i] = V_BestColor(V_GetDefaultPalette()->basecolors, r, g, b);
+			}
+
+			dest[0x2C] = dest[0x2D] = dest[0x2F] = dest[end_index];
 		}
 
 		switch ((blood_color_t)i)

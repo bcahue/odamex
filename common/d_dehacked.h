@@ -227,5 +227,6 @@ static const char* SoundMap[] = { NULL,
 void D_UndoDehPatch();
 void D_PostProcessDeh();
 bool D_DoDehPatch(const OResFile* patchfile, const int lump);
+int V_BloodColor(int blood);
 
 #endif //__D_DEHACK_H__

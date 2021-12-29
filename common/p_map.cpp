@@ -645,7 +645,7 @@ static BOOL PIT_CheckThing (AActor *thing)
 		{
 			int damage = ((P_Random() & 3) + 2) * tmthing->info->damage;
 			if (!(thing->flags & MF_NOBLOOD))
-				P_SpawnBlood(tmthing->x, tmthing->y, tmthing->z, damage);
+				P_SpawnBlood(tmthing->x, tmthing->y, tmthing->z, damage, (blood_color_t)tmthing->info->bloodcolor);
 			if (tmthing->info->ripsound)
 				S_Sound(tmthing, CHAN_VOICE, tmthing->info->ripsound, 1, ATTN_NORM);
 
@@ -2177,7 +2177,7 @@ BOOL PTR_ShootTraverse (intercept_t* in)
 	}
 
 	if (spawnblood)
-		P_SpawnBlood(x, y, z, la_damage);
+		P_SpawnBlood(x, y, z, la_damage, (blood_color_t)in->d.thing->info->bloodcolor);
 	else
 		P_SpawnPuff(x, y, z);
 
@@ -2565,7 +2565,8 @@ void P_RailAttack (AActor *source, int damage, int offset)
 			if (RailHits[i].hitthing->flags & MF_NOBLOOD)
 				P_SpawnPuff(RailHits[i].x, RailHits[i].y, RailHits[i].z);
 			else
-				P_SpawnBlood(RailHits[i].x, RailHits[i].y, RailHits[i].z, damage);
+				P_SpawnBlood(RailHits[i].x, RailHits[i].y, RailHits[i].z, damage,
+				             (blood_color_t)RailHits[i].hitthing->info->bloodcolor);
 			P_DamageMobj (RailHits[i].hitthing, source, source, damage, MOD_RAILGUN);
 		}
 	}
