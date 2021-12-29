@@ -214,6 +214,16 @@ byte *Ranges;
 static byte *translationtablesmem = NULL;
 byte bosstable[256];
 
+// [Blair] Blood color translations
+byte graybctable[256];
+byte greenbctable[256];
+byte bluebctable[256];
+byte yellowbctable[256];
+byte blackbctable[256];
+byte purplebctable[256];
+byte whitebctable[256];
+byte orangebctable[256];
+
 static void R_BuildFontTranslation(int color_num, argb_t start_color, argb_t end_color)
 {
 	const palindex_t start_index = 0xB0;
@@ -262,6 +272,93 @@ static byte SoftLight(const byte bot, const byte top)
 	return res * 255;
 }
 
+void R_InitBloodColorTranslationTables()
+{
+	for (int i = 0; i > 8; i++)
+	{
+		argb_t top;
+		switch ((blood_color_t)i)
+		{
+		case BCR_NORMAL:
+			continue;
+			break;
+		case BCR_GRAY:
+			top.setChannels(0xff, 0x96, 0x96, 0x96);
+			break;
+		case BCR_GREEN:
+			top.setChannels(0xff, 0x00, 0x7d, 0x2a);
+			break;
+		case BCR_BLUE:
+			top.setChannels(0xff, 0x00, 0x11, 0xff);
+			break;
+		case BCR_YELLOW:
+			top.setChannels(0xff, 0xdd, 0xff, 0x00);
+			break;
+		case BCR_BLACK:
+			top.setChannels(0xff, 0x10, 0x10, 0x10);
+			break;
+		case BCR_PURPLE:
+			top.setChannels(0xff, 0x48, 0x00, 0xb5);
+			break;
+		case BCR_WHITE:
+			top.setChannels(0xff, 0xff, 0xff, 0xff);
+			break;
+		case BCR_ORANGE:
+			top.setChannels(0xff, 0xff, 0x99, 0x00);
+			break;
+		default:
+			continue;
+			break;
+		}
+
+		byte bloodtable[256];
+
+		for (size_t i = 0; i < ARRAY_LENGTH(bloodtable); i++)
+		{
+			argb_t bot = V_GetDefaultPalette()->basecolors[i];
+			argb_t mul(SoftLight(bot.getr(), top.getr()),
+			           SoftLight(bot.getg(), top.getg()),
+			           SoftLight(bot.getb(), top.getb()));
+
+			bloodtable[i] = V_BestColor(V_GetDefaultPalette()->basecolors, mul);
+		}
+
+		switch ((blood_color_t)i)
+		{
+		case BCR_NORMAL:
+			continue;
+			break;
+		case BCR_GRAY:
+			ArrayCopy(::graybctable, bloodtable);
+			break;
+		case BCR_GREEN:
+			ArrayCopy(::greenbctable, bloodtable);
+			break;
+		case BCR_BLUE:
+			ArrayCopy(::bluebctable, bloodtable);
+			break;
+		case BCR_YELLOW:
+			ArrayCopy(::yellowbctable, bloodtable);
+			break;
+		case BCR_BLACK:
+			ArrayCopy(::blackbctable, bloodtable);
+			break;
+		case BCR_PURPLE:
+			ArrayCopy(::purplebctable, bloodtable);
+			break;
+		case BCR_WHITE:
+			ArrayCopy(::whitebctable, bloodtable);
+			break;
+		case BCR_ORANGE:
+			ArrayCopy(::orangebctable, bloodtable);
+			break;
+		default:
+			continue;
+			break;
+		}
+	}
+}
+
 //
 // R_InitTranslationTables
 //
@@ -285,6 +382,9 @@ void R_InitTranslationTables()
 
 		::bosstable[i] = V_BestColor(V_GetDefaultPalette()->basecolors, mul);
 	}
+
+	// [Blair] Blood color translations
+	R_InitBloodColorTranslationTables();
 
 	translationtablesmem = new byte[256*(MAXPLAYERS+3+22)+255]; // denis - fixme - magic numbers?
 

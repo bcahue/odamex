@@ -2075,6 +2075,9 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, int damage)
 	if (th->tics < 1)
 		th->tics = 1;
 
+	if (th->info->bloodcolor != BCR_NORMAL)
+		th->translation = translationref_t(&V_BloodColorTable(th->info->bloodcolor));
+
 	if (damage <= 12 && damage >= 9)
 		P_SetMobjState (th, S_BLOOD2);
 	else if (damage < 9)

@@ -1398,6 +1398,10 @@ static int PatchThing(int thingy)
 		{
 			info->mass = val;
 		}
+		else if (stricmp(Line1, "Blood color") == 0)
+		{
+			info->bloodcolor = V_BloodColor(val);
+		}
 		else
 		{
 			PrintUnknown(Line1, "Thing", thingNum);

@@ -187,6 +187,16 @@ extern void (*R_DrawSlopeSpanD)(void);
 extern void (*r_dimpatchD)(IWindowSurface* surface, argb_t color, int alpha, int x1, int y1, int w, int h);
 
 extern byte bosstable[256];
+// [Blair] Blood color translations
+extern byte graybctable[256];
+extern byte greenbctable[256];
+extern byte bluebctable[256];
+extern byte yellowbctable[256];
+extern byte blackbctable[256];
+extern byte purplebctable[256];
+extern byte whitebctable[256];
+extern byte orangebctable[256];
+
 extern byte*			translationtables;
 extern argb_t           translationRGB[MAXPLAYERS+1][16];
 

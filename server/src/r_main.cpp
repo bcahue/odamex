@@ -44,6 +44,15 @@ extern dyncolormap_t NormalLight;
 // [Russell] - Doesn't get used serverside
 byte *translationtables;
 byte bosstable[256];
+// [Blair] Blood color translations
+byte graybctable[256];
+byte greenbctable[256];
+byte bluebctable[256];
+byte yellowbctable[256];
+byte blackbctable[256];
+byte purplebctable[256];
+byte whitebctable[256];
+byte orangebctable[256];
 
 fixed_t			FocalLengthX;
 fixed_t			FocalLengthY;

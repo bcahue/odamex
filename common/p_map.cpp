@@ -3110,6 +3110,10 @@ BOOL PIT_ChangeSector (AActor *thing)
 			thing->radius = 0;
 		}
 
+		if (thing->info->bloodcolor != BCR_NORMAL)
+			thing->translation =
+			    translationref_t(&V_BloodColorTable(thing->info->bloodcolor));
+
 		// keep checking
 		return true;
 	}
@@ -3141,6 +3145,10 @@ BOOL PIT_ChangeSector (AActor *thing)
 			AActor *mo = new AActor (thing->x,
 									 thing->y,
 									 thing->z + thing->height/2, MT_BLOOD);
+
+			if (mo->info->bloodcolor != BCR_NORMAL)
+				mo->translation =
+				    translationref_t(&V_BloodColorTable(mo->info->bloodcolor));
 
 			mo->momx = P_RandomDiff (mo) << 12;
 			mo->momy = P_RandomDiff (mo) << 12;

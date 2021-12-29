@@ -1686,6 +1686,63 @@ typedef enum
 	SG_END
 } splash_group_t;
 
+typedef enum {
+    BCR_NORMAL, // 0 - Red (normal)
+    BCR_GRAY,   // 1 - Grey
+    BCR_GREEN,  // 2 - Green
+    BCR_BLUE,  // 3 - Blue
+    BCR_YELLOW, // 4 - Yellow
+    BCR_BLACK,  // 5 - Black
+    BCR_PURPLE, // 6 - Purple
+    BCR_WHITE,  // 7 - White
+    BCR_ORANGE, // 8 - Orange
+} blood_color_t;
+
+int V_BloodColor(int blood)
+{
+	if (blood < 0 || blood > 8)
+		blood = 0;
+
+	return (blood_color_t)blood;
+}
+
+const byte& V_BloodColorTable(int blood)
+{
+	switch ((blood_color_t)blood)
+	{
+	case BCR_NORMAL:
+		return;
+		break;
+	case BCR_GRAY:
+		return graybctable[0];
+		break;
+	case BCR_GREEN:
+		return greenbctable[0];
+		break;
+	case BCR_BLUE:
+		return bluebctable[0];
+		break;
+	case BCR_YELLOW:
+		return yellowbctable[0];
+		break;
+	case BCR_BLACK:
+		return blackbctable[0];
+		break;
+	case BCR_PURPLE:
+		return purplebctable[0];
+		break;
+	case BCR_WHITE:
+		return whitebctable[0];
+		break;
+	case BCR_ORANGE:
+		return orangebctable[0];
+		break;
+	default:
+		return;
+		break;
+	}
+}
+
 typedef struct
 {
 	int doomednum;
@@ -1716,6 +1773,9 @@ typedef struct
 	statenum_t raisestate;
 	int translucency;
 	const char *name;
+
+	// EE stuff
+	int bloodcolor;
 
 	// MBF21 STUFF HERE
 	int altspeed;

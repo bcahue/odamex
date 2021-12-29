@@ -7674,6 +7674,7 @@ void D_Init_DEHEXTRA_Frames(void)
 	// Start all MBF21 content here.
 	for (int i = 0; i < NUMMOBJTYPES ; i++)
 	{
+		mobjinfo[i].bloodcolor = BCR_NORMAL;
 		mobjinfo[i].altspeed = NO_ALTSPEED;
 		mobjinfo[i].infighting_group = IG_DEFAULT;
 		mobjinfo[i].projectile_group = PG_DEFAULT;
