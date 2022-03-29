@@ -78,6 +78,17 @@ inline static fixed_t FixedMul(fixed_t a, fixed_t b)
 	return (fixed_t)(((int64_t)a * b) >> FRACBITS);
 }
 
+inline static fixed_t FixedMod(fixed_t a, fixed_t b)
+{
+	if (b & (b - 1))
+	{
+		fixed_t r = a % b;
+		return ((r < 0) ? r + b : r);
+	}
+	else
+		return (a & (b - 1));
+}
+
 //
 // Fixed Point Division for 16.16 precision
 //

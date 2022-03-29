@@ -29,14 +29,33 @@
 #include "r_state.h"
 #include "p_local.h"
 #include "cl_demo.h"
+#include "p_mapformat.h"
 
 
 typedef std::pair<fixed_t, unsigned int> fixed_uint_pair;
 
+// Sector interpolation
 static std::vector<fixed_uint_pair> prev_ceilingheight;
 static std::vector<fixed_uint_pair> saved_ceilingheight;
 static std::vector<fixed_uint_pair> prev_floorheight;
 static std::vector<fixed_uint_pair> saved_floorheight;
+
+// Sector flat scrolling interpolation
+static std::vector<fixed_uint_pair> prev_floor_xoffs;
+static std::vector<fixed_uint_pair> saved_floor_xoffs;
+static std::vector<fixed_uint_pair> prev_floor_yoffs;
+static std::vector<fixed_uint_pair> saved_floor_yoffs;
+
+static std::vector<fixed_uint_pair> prev_ceiling_xoffs;
+static std::vector<fixed_uint_pair> saved_ceiling_xoffs;
+static std::vector<fixed_uint_pair> prev_ceiling_yoffs;
+static std::vector<fixed_uint_pair> saved_ceiling_yoffs;
+
+// Texture scrolling interpolation
+static std::vector<fixed_uint_pair> prev_rowoffset;
+static std::vector<fixed_uint_pair> saved_rowoffset;
+static std::vector<fixed_uint_pair> prev_textureoffset;
+static std::vector<fixed_uint_pair> saved_textureoffset;
 
 extern NetDemo netdemo;
 
@@ -51,15 +70,38 @@ void R_InterpolationTicker()
 {
 	prev_ceilingheight.clear();
 	prev_floorheight.clear();
+	prev_floor_xoffs.clear();
+	prev_floor_yoffs.clear();
+	prev_ceiling_xoffs.clear();
+	prev_ceiling_yoffs.clear();
+	prev_rowoffset.clear();
+	prev_textureoffset.clear();
 
 	if (gamestate == GS_LEVEL)
 	{
 		for (int i = 0; i < numsectors; i++)
 		{
 			if (sectors[i].ceilingdata)
+			{
 				prev_ceilingheight.push_back(std::make_pair(P_CeilingHeight(&sectors[i]), i));
+				prev_ceiling_xoffs.push_back(std::make_pair(sectors[i].ceiling_xoffs, i));
+				prev_ceiling_yoffs.push_back(std::make_pair(sectors[i].ceiling_yoffs, i));
+			}
 			if (sectors[i].floordata)
+			{
 				prev_floorheight.push_back(std::make_pair(P_FloorHeight(&sectors[i]), i));
+				prev_floor_xoffs.push_back(std::make_pair(sectors[i].floor_xoffs, i));
+				prev_floor_yoffs.push_back(std::make_pair(sectors[i].floor_yoffs, i));
+			}
+		}
+
+		for (int i = 0; i < numsides; i++)
+		{
+			if (P_IsScrollLine(sides[i].special))
+			{
+				prev_rowoffset.push_back(std::make_pair(sides[i].rowoffset, i));
+				prev_textureoffset.push_back(std::make_pair(sides[i].textureoffset, i));
+			}
 		}
 	}
 }
@@ -75,8 +117,20 @@ void R_ResetInterpolation()
 {
 	prev_ceilingheight.clear();
 	prev_floorheight.clear();
+	prev_floor_xoffs.clear();
+	prev_floor_yoffs.clear();
+	prev_ceiling_xoffs.clear();
+	prev_ceiling_yoffs.clear();
+	prev_rowoffset.clear();
+	prev_textureoffset.clear();
 	saved_ceilingheight.clear();
 	saved_floorheight.clear();
+	saved_floor_xoffs.clear();
+	saved_floor_yoffs.clear();
+	saved_ceiling_xoffs.clear();
+	saved_ceiling_yoffs.clear();
+	saved_rowoffset.clear();
+	saved_textureoffset.clear();
 	::localview.angle = 0;
 	::localview.setangle = false;
 	::localview.skipangle = false;
@@ -98,6 +152,12 @@ void R_BeginInterpolation(fixed_t amount)
 {
 	saved_ceilingheight.clear();
 	saved_floorheight.clear();
+	saved_floor_xoffs.clear();
+	saved_floor_yoffs.clear();
+	saved_ceiling_xoffs.clear();
+	saved_ceiling_yoffs.clear();
+	saved_rowoffset.clear();
+	saved_textureoffset.clear();
 
 	if (gamestate == GS_LEVEL)
 	{
@@ -130,6 +190,98 @@ void R_BeginInterpolation(fixed_t amount)
 			fixed_t new_value = old_value + FixedMul(cur_value - old_value, amount);
 			P_SetFloorHeight(sector, new_value);
 		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator floor_xoffs_it =
+		         prev_floor_xoffs.begin();
+		     floor_xoffs_it != prev_floor_xoffs.end(); ++floor_xoffs_it)
+		{
+			unsigned int secnum = floor_xoffs_it->second;
+
+			fixed_t old_value = floor_xoffs_it->first;
+			fixed_t cur_value = sectors[secnum].floor_xoffs;
+
+			saved_floor_xoffs.push_back(std::make_pair(cur_value, secnum));
+
+			fixed_t new_value = old_value +FixedMul(cur_value - old_value, amount);
+			sectors[secnum].floor_xoffs = new_value;
+		}
+		
+		for (std::vector<fixed_uint_pair>::const_iterator floor_yoffs_it =
+		         prev_floor_yoffs.begin();
+		     floor_yoffs_it != prev_floor_yoffs.end(); ++floor_yoffs_it)
+		{
+			unsigned int secnum = floor_yoffs_it->second;
+
+			fixed_t old_value = floor_yoffs_it->first;
+			fixed_t cur_value = sectors[secnum].floor_yoffs;
+
+			saved_floor_yoffs.push_back(std::make_pair(cur_value, secnum));
+
+			fixed_t new_value = old_value + FixedMul(cur_value - old_value, amount);
+			sectors[secnum].floor_yoffs = new_value;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator ceiling_xoffs_it =
+		         prev_ceiling_xoffs.begin();
+		     ceiling_xoffs_it != prev_ceiling_xoffs.end(); ++ceiling_xoffs_it)
+		{
+			unsigned int secnum = ceiling_xoffs_it->second;
+
+			fixed_t old_value = ceiling_xoffs_it->first;
+			fixed_t cur_value = sectors[secnum].ceiling_xoffs;
+
+			saved_ceiling_xoffs.push_back(std::make_pair(cur_value, secnum));
+
+			fixed_t new_value = old_value + FixedMul(cur_value - old_value, amount);
+			sectors[secnum].ceiling_xoffs = new_value;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator ceiling_yoffs_it =
+		         prev_ceiling_yoffs.begin();
+		     ceiling_yoffs_it != prev_ceiling_yoffs.end(); ++ceiling_yoffs_it)
+		{
+			unsigned int secnum = ceiling_yoffs_it->second;
+
+			fixed_t old_value = ceiling_yoffs_it->first;
+			fixed_t cur_value = sectors[secnum].ceiling_yoffs;
+
+			saved_ceiling_yoffs.push_back(std::make_pair(cur_value, secnum));
+
+			fixed_t new_value = old_value + FixedMul(cur_value - old_value, amount);
+			sectors[secnum].ceiling_yoffs = new_value;
+		}
+		
+		for (std::vector<fixed_uint_pair>::const_iterator rowoffset_it =
+		         prev_rowoffset.begin();
+		     rowoffset_it != prev_rowoffset.end(); ++rowoffset_it)
+		{
+			int sidenum = rowoffset_it->second;
+
+			fixed_t old_value = rowoffset_it->first;
+			fixed_t cur_value = sides[sidenum].rowoffset;
+
+			saved_rowoffset.push_back(std::make_pair(cur_value, sidenum));
+
+			fixed_t new_value = old_value += FixedMul(cur_value - old_value, amount);
+			sides[sidenum].rowoffset = new_value;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator textureoffset_it =
+		         prev_textureoffset.begin();
+		     textureoffset_it != prev_textureoffset.end(); ++textureoffset_it)
+		{
+			int sidenum = textureoffset_it->second;
+
+			side_t* side = &sides[sidenum];
+
+			fixed_t old_value = textureoffset_it->first;
+			fixed_t cur_value = side->textureoffset;
+
+			saved_textureoffset.push_back(std::make_pair(cur_value, sidenum));
+
+			fixed_t new_value = old_value += FixedMul(cur_value - old_value, amount);
+			side->textureoffset = new_value;
+		}
 	}
 }
 
@@ -155,6 +307,50 @@ void R_EndInterpolation()
 		{
 			sector_t* sector = &sectors[floor_it->second];
 			P_SetFloorHeight(sector, floor_it->first);
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator floor_xoffs_it =
+		         saved_floor_xoffs.begin();
+		     floor_xoffs_it != saved_floor_xoffs.end(); ++floor_xoffs_it)
+		{
+			sectors[floor_xoffs_it->second].floor_xoffs += floor_xoffs_it->first;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator floor_yoffs_it =
+		         saved_floor_yoffs.begin();
+		     floor_yoffs_it != saved_floor_yoffs.end(); ++floor_yoffs_it)
+		{
+			sectors[floor_yoffs_it->second].floor_yoffs += floor_yoffs_it->first;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator ceiling_xoffs_it =
+		         saved_ceiling_xoffs.begin();
+		     ceiling_xoffs_it != saved_ceiling_xoffs.end(); ++ceiling_xoffs_it)
+		{
+			sectors[ceiling_xoffs_it->second].ceiling_xoffs += ceiling_xoffs_it->first;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator ceiling_yoffs_it =
+		         saved_ceiling_yoffs.begin();
+		     ceiling_yoffs_it != saved_ceiling_yoffs.end(); ++ceiling_yoffs_it)
+		{
+			sectors[ceiling_yoffs_it->second].ceiling_yoffs += ceiling_yoffs_it->first;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator rowoffset_it =
+		         saved_rowoffset.begin();
+		     rowoffset_it != saved_rowoffset.end(); ++rowoffset_it)
+		{
+			side_t* side = &sides[rowoffset_it->second];
+			side->rowoffset += rowoffset_it->first;
+		}
+
+		for (std::vector<fixed_uint_pair>::const_iterator textureoffset_it =
+		         saved_textureoffset.begin();
+		     textureoffset_it != saved_textureoffset.end(); ++textureoffset_it)
+		{
+			side_t* side = &sides[textureoffset_it->second];
+			side->textureoffset += textureoffset_it->first;
 		}
 	}
 }

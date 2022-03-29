@@ -366,6 +366,20 @@ bool P_IsExitLine(const short special)
 	       special == 124 || special == 198;
 }
 
+bool P_IsScrollLine(const short special)
+{
+	if (map_format.getZDoom())
+		return special == 100 || special == 101 || special == 102 || special == 103 ||
+		       special == 222 || special == 225;
+
+	return special == 48 || special == 85 || special == 214 || special == 215 ||
+	       special == 216 || special == 217 || special == 218 || special == 245 ||
+	       special == 246 || special == 247 || special == 248 || special == 249 ||
+	       special == 250 || special == 251 || special == 252 || special == 253 ||
+	       special == 254 || special == 255 || special == 1024 || special == 1025 ||
+	       special == 1026;
+}
+
 bool P_IsTeleportLine(const short special)
 {
 	if (map_format.getZDoom())

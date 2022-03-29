@@ -841,7 +841,7 @@ void R_StoreWallRange(int start, int stop)
 			rw_midtexturemid = fc - viewz;
 		}
 
-		rw_midtexturemid += sidedef->rowoffset;
+		rw_midtexturemid += FixedMod(sidedef->rowoffset, textureheight[midtexture]);
 
 		ds_p->silhouette = SIL_BOTH;
 		ds_p->sprtopclip = viewheightarray;
@@ -982,8 +982,8 @@ void R_StoreWallRange(int start, int stop)
 			}
 		}
 
-		rw_toptexturemid += sidedef->rowoffset;
-		rw_bottomtexturemid += sidedef->rowoffset;
+		rw_toptexturemid += FixedMod(sidedef->rowoffset, textureheight[toptexture]);
+		rw_bottomtexturemid += FixedMod(sidedef->rowoffset, textureheight[bottomtexture]);
 
 		// allocate space for masked texture tables
 		if (sidedef->midtexture)
