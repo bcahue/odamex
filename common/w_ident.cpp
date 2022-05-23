@@ -847,23 +847,7 @@ public:
 		if (ident)
 			return ident->mIsIWAD;
 
-		// [SL] not an offical IWAD.
-		// Check for lumps that are required by vanilla Doom.
-		static const int NUM_CHECKLUMPS = 6;
-		static const char checklumps[NUM_CHECKLUMPS][8] = {
-		    {'P', 'L', 'A', 'Y', 'P', 'A', 'L'},      // 0
-		    {'C', 'O', 'L', 'O', 'R', 'M', 'A', 'P'}, // 1
-		    {'F', '_', 'S', 'T', 'A', 'R', 'T'},      // 2
-		    {'S', '_', 'S', 'T', 'A', 'R', 'T'},      // 3
-		    {'T', 'E', 'X', 'T', 'U', 'R', 'E', '1'}, // 4
-		    {'S', 'T', 'D', 'I', 'S', 'K'}            // 5
-		};
-
-		WadFileLumpFinder lumps(file.getFullpath());
-		for (int i = 0; i < NUM_CHECKLUMPS; i++)
-			if (!lumps.exists(std::string(checklumps[i], 8)))
-				return false;
-		return true;
+		return false;
 	}
 
 	bool areCompatible(const OMD5Hash& hash1, const OMD5Hash& hash2) const
