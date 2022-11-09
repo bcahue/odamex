@@ -391,6 +391,11 @@ bool P_MovingCeilingCompleted(sector_t *sector)
 		DElevator *elevator = static_cast<DElevator *>(sector->ceilingdata);
 		return (elevator->m_Status == DElevator::destroy);
 	}
+	if (sector->ceilingdata->IsA(RUNTIME_CLASS(DWaggle)))
+	{
+		DWaggle* waggle = static_cast<DWaggle*>(sector->ceilingdata);
+		return (waggle->m_State == DWaggle::destroy);
+	}
 
 	return false;
 }
@@ -409,6 +414,11 @@ bool P_MovingFloorCompleted(sector_t *sector)
 	{
 		DFloor *floor = static_cast<DFloor *>(sector->floordata);
 		return (floor->m_Status == DFloor::destroy);
+	}
+	if (sector->floordata->IsA(RUNTIME_CLASS(DWaggle)))
+	{
+		DWaggle* waggle = static_cast<DWaggle*>(sector->floordata);
+		return (waggle->m_State == DWaggle::destroy);
 	}
 
 	return false;

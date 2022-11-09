@@ -1252,7 +1252,10 @@ void SV_UpdateSector(client_t* cl, int sectornum)
 	sector_t* sector = &sectors[sectornum];
 
 	// Only update moveable sectors to clients
-	if (sector != NULL && sector->moveable)
+	if (sector != NULL &&
+			sector->moveable &&
+			!sector->ceilingdata->IsA(RUNTIME_CLASS(DWaggle)) && // Don't update waggles
+			!sector->floordata->IsA(RUNTIME_CLASS(DWaggle)))
 	{
 		MSG_WriteSVC(&cl->reliablebuf, SVC_UpdateSector(*sector));
 	}
@@ -1262,6 +1265,20 @@ void SV_BroadcastSector(int sectornum)
 {
 	for (Players::iterator it = players.begin();it != players.end();++it)
 		SV_UpdateSector(&(it->client), sectornum);
+}
+
+void SV_SendWaggle(client_t* cl, int sectornum)
+{
+	sector_t& sector = ::sectors[sectornum];
+
+	// There's no waggles here!
+	if (!sector.ceilingdata->IsA(RUNTIME_CLASS(DWaggle)) ||
+	    !sector.floordata->IsA(RUNTIME_CLASS(DWaggle)))
+	{
+		return;
+	}
+
+	MSG_WriteSVC(&cl->reliablebuf, SVC_WaggleStart(sector));
 }
 
 //
