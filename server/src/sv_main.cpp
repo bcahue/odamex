@@ -3204,32 +3204,29 @@ int SV_CalculateNumTiccmds(player_t &player)
 
 	static const size_t maximum_queue_size = TICRATE / 4;
 
-	if (!sv_ticbuffer || gamestate != GS_LEVEL || player.spectator || player.playerstate == PST_DEAD)
+	if (!sv_ticbuffer || player.spectator || player.playerstate == PST_DEAD)
 	{
 		// Process all queued ticcmds.
 		return maximum_queue_size;
 	}
-	if (player.missingticcmdcount > 0)
+	if (player.mo->momx == 0 && player.mo->momy == 0 && player.mo->momz == 0)
 	{
-		if (player.mo->momx == 0 && player.mo->momy == 0 && player.mo->momz == 0)
-		{
-			// Player is not moving
-			return 2;
-		}
-		if (player.cmdqueue.size() > 2 && gametic % (2*TICRATE) == player.id % (2*TICRATE))
-		{
-			// Process an extra ticcmd once every 2 seconds to reduce the
-			// queue size. Use player id to stagger the timing to prevent everyone
-			// from running an extra ticcmd at the same time.
-			return 2;
-		}
-		if (player.cmdqueue.size() > maximum_queue_size)
-		{
-			// The player experienced a large latency spike so try to catch up by
-			// processing more than one ticcmd at the expense of appearing perfectly
-			// smooth.
-			return 2;
-		}
+		// Player is not moving
+		return 2;
+	}
+	if (player.cmdqueue.size() > 2 && gametic % 2 * TICRATE == player.id % 2 * TICRATE)
+	{
+		// Process an extra ticcmd once every 2 seconds to reduce the
+		// queue size. Use player id to stagger the timing to prevent everyone
+		// from running an extra ticcmd at the same time.
+		return 2;
+	}
+	if (player.cmdqueue.size() > maximum_queue_size)
+	{
+		// The player experienced a large latency spike so try to catch up by
+		// processing more than one ticcmd at the expense of appearing perfectly
+		// smooth.
+		return 2;
 	}
 
 	// always run at least 1 ticcmd if possible
