@@ -256,6 +256,21 @@ begin
     Result := 0; 
 end;
  
+#define DowngradeText \
+  "The version of Odamex you are about to install is a downgrade to the currently installed version." + \
+  "\n" + \
+  "Do you want to proceed with the installation?"
+
+#define SidegradeText \
+  "The version of Odamex you are about to install is identical to the currently installed version." + \
+  "\n" + \
+  "Do you want to proceed with the installation?"
+
+#define DetectedText \
+  "Odamex has been detected on this machine. Would you like to do an in-place upgrade?" + \
+  "\n" + \
+  "If you want to upgrade your copy of Odamex in-place, press ""Yes."" This is the suggested choice." + \
+  "If you want to exit the installation, press ""Cancel."""
  
 function InitializeSetup(): Boolean;
 var
@@ -279,15 +294,15 @@ begin
       sOldVersion := GetRegistryVersion();
       iVersionCompare := CompareVersion(sOldVersion, sVersion);
       if iVersionCompare = -1 then
-          iUpgradeResult := MsgBox(ExpandConstant('The version of Odamex you are about to install is a downgrade to the currently installed version. Do you want to proceed with the installation?'), mbConfirmation, MB_YESNO);
+          iUpgradeResult := MsgBox(ExpandConstant({#DowngradeText}), mbConfirmation, MB_YESNO);
       if iVersionCompare = 0 then
-          iUpgradeResult := MsgBox(ExpandConstant('The version of Odamex you are about to install is identical to the currently installed version. Do you want to proceed with the installation?'), mbConfirmation, MB_YESNO);
+          iUpgradeResult := MsgBox(ExpandConstant({#SidegradeText}), mbConfirmation, MB_YESNO);
       if iVersionCompare = 1 then
           iUpgradeResult := IDYES;
 
       if iUpgradeResult = IDYES then
       begin
-        V := MsgBox(ExpandConstant('Odamex has been detected on this machine. If you do not uninstall, there will be an in-place installation of Odamex to the same path. Do you want to uninstall the previous installation?'), mbConfirmation, MB_YESNO);
+        V := MsgBox(ExpandConstant({#DetectedText}), mbConfirmation, MB_YESNOCANCEL);
       
         if V = IDYES then
         begin
