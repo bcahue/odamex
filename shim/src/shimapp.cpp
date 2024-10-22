@@ -63,8 +63,6 @@ typedef int PipeType;
 #include "shimapp.h"
 #include "discordlib.h"
 
-using namespace std::chrono_literals;
-
 OShimApp::OShimApp()
 {
 	GPipeRead = NULLPIPE;
@@ -395,7 +393,7 @@ void OShimApp::processCommands()
 			break;
 		}
 
-		std::this_thread::sleep_for(50ms);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		if (!pipeReady(GPipeRead))
 		{
