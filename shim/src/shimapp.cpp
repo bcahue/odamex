@@ -58,6 +58,7 @@ typedef int PipeType;
 #include <string>
 #include <sstream>
 #include <thread>
+#include <cstdint>
 
 #include "shimapp.h"
 #include "discordlib.h"
