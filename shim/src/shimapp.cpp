@@ -48,6 +48,7 @@ typedef HANDLE PipeType;
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <poll.h>
 #include <unistd.h>
 typedef pid_t ProcessType;
 typedef int PipeType;
@@ -163,6 +164,24 @@ char* OShimApp::getEnvVar(const char* key, char* buf, const size_t _buflen)
 }
 
 #else
+
+#if !defined(POLLIN)
+
+#define POLLIN 0x01
+#define POLLPRI 0x02
+#define POLLOUT 0x04
+#define POLLERR 0x08
+#define POLLHUP 0x10
+#define POLLNVAL 0x20
+
+struct pollfd
+{
+	PipeType fd;
+	short events;
+	short revents;
+};
+
+#endif
 
 int OShimApp::pipeReady(PipeType fd)
 {

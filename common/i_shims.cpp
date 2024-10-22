@@ -39,14 +39,14 @@
 //
 //-----------------------------------------------------------------------------
 
-#include "i_shims.h"
-#include "doomtype.h"
-#include "c_cvars.h"
+#include "odamex.h"
 
 #include <string>
 
 #include <sstream>
 #include <locale>
+
+#include "i_shims.h"
 
 #define DEBUGPIPE 0
 
