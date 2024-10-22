@@ -55,13 +55,12 @@ typedef int PipeType;
 #define NULLPIPE -1
 #endif
 
+#include "shimapp.h"
+#include "discordlib.h"
+
 #include <string>
 #include <sstream>
 #include <thread>
-#include <cstdint>
-
-#include "shimapp.h"
-#include "discordlib.h"
 
 OShimApp::OShimApp()
 {
