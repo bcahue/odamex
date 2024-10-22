@@ -54,9 +54,10 @@ typedef HANDLE PipeType;
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <poll.h>
+#include <unistd.h>
 typedef pid_t ProcessType;
 typedef int PipeType;
 #define NULLPIPE -1

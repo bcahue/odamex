@@ -325,8 +325,6 @@ char* OShim::getEnvVar(const char* key, char* buf, const size_t _buflen)
 
 #else
 
-#include <poll.h>
-
 #if !defined(POLLIN)
 
 #define POLLIN 0x01
