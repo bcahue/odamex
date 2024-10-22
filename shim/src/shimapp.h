@@ -40,6 +40,8 @@
 
 #include <cstdint>
 
+#include <ctime>
+
 #define DEBUGPIPE 1
 #if DEBUGPIPE
 #define dbgpipe printf
