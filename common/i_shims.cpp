@@ -165,6 +165,16 @@ int OShim::writeHello(PipeType fd)
 	return write1ByteCmd(fd, SHIMCMD_HELLO);
 }
 
+int OShim::isAlive(PipeType fd)
+{
+	return (fd != NULLPIPE);
+}
+
+int OShim::isDead(PipeType fd)
+{
+	return !isAlive(fd);
+}
+
 void OShim::fail(const char* err)
 {
 	Printf(PRINT_WARNING,
@@ -203,11 +213,15 @@ void OShim::sendStatusUpdate(const StatusUpdate& update)
 
 	//Printf("Parent sending SHIMCMD_SETSTATUS.\n");
 
+	std::ostringstream status;
+
+	update.status_update_serialize(status);
+
+	std::string serialized = status.str();
+
 	std::ostringstream data_stream;
 
-	update.status_update_serialize(data_stream);
-
-	data_stream = std::ostringstream() << (uint8_t)SHIMCMD_SETSTATUS << data_stream.str();
+	data_stream << (uint8_t)SHIMCMD_SETSTATUS << serialized;
 
 	std::ostringstream data_stream_shim;
 
@@ -215,7 +229,7 @@ void OShim::sendStatusUpdate(const StatusUpdate& update)
 	data_stream_shim.write(reinterpret_cast<const char*>(&length), sizeof(length));
 	data_stream_shim << data_stream.str();
 
-	auto buffer = data_stream_shim.str();
+	std::string buffer = data_stream_shim.str();
 	writePipe(PParentWrite, buffer.data(), buffer.length());
 }
 
@@ -224,16 +238,6 @@ void OShim::sendStatusUpdate(const StatusUpdate& update)
 #include <codecvt>
 
 static LPWSTR LpCmdLine = NULL;
-
-int OShim::isAlive(PipeType fd)
-{
-	return (fd != NULLPIPE);
-}
-
-int OShim::isDead(PipeType fd)
-{
-	return !isAlive(fd);
-}
 
 int OShim::pipeReady(PipeType fd)
 {
