@@ -36,6 +36,8 @@
 
 #pragma once
 
+#include <stdint.h>
+
 #include "discord.h"
 
 #include <memory>
