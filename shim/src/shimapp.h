@@ -38,6 +38,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #define DEBUGPIPE 1
 #if DEBUGPIPE
 #define dbgpipe printf
