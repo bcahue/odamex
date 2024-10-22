@@ -1,7 +1,7 @@
 include(OdamexTargetSettings)
 
-# Use C++14 everywhere
-set( CMAKE_CXX_STANDARD 14 )
+# Use C++17 everywhere
+set( CMAKE_CXX_STANDARD 17 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
 # use unquoted #defines
