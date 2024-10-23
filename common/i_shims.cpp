@@ -63,8 +63,6 @@ OShim::OShim()
 	lastWriteTime = 0;
 	lastHelloTime = 0;
 	lastStatusTime = 0;
-	lastStatus = {};
-	
 
 #ifdef _WIN32
 	shimPid = {0, 0, 0, 0};
