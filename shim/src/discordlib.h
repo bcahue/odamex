@@ -40,8 +40,6 @@
 #include <string>
 #include <sstream>
 
-#include <iostream>
-#include <limits>
 #include <cstdint>
 
 #include <discord.h>
