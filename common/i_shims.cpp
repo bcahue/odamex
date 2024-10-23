@@ -62,6 +62,9 @@ OShim::OShim()
 	backoff = false;
 	lastWriteTime = 0;
 	lastHelloTime = 0;
+	lastStatusTime = 0;
+	lastStatus = {};
+	
 
 #ifdef _WIN32
 	shimPid = {0, 0, 0, 0};
@@ -580,6 +583,18 @@ void OShim::Shim_initialize(void)
 void OShim::Shim_sendStatusUpdate(const StatusUpdate& update)
 {
 	sendStatusUpdate(update);
+	lastStatus = update;
+	lastStatusTime = std::time(0);
+}
+
+const StatusUpdate& OShim::GetLastStatus(void)
+{
+	return lastStatus;
+}
+
+time_t OShim::GetLastStatusTime(void)
+{
+	return lastStatusTime;
 }
 
 void OShim::Shim_deinitialize(void)
@@ -609,6 +624,29 @@ void I_InitShim(void)
 }
 
 //
+// I_GameStatusTicker
+//
+// Main ticker for in-game status updates
+//
+void I_GameStatusTicker(const StatusUpdate& update)
+{
+	time_t curtime = std::time(0);
+
+	if (OShim::getInstance().GetLastStatusTime() == curtime)
+	{
+		return;
+	}
+
+	const StatusUpdate& s = OShim::getInstance().GetLastStatus();
+
+	if (&update != &s)
+	{
+		OShim::getInstance().Shim_sendStatusUpdate(update);
+	}
+}
+
+
+//
 // I_ShutdownShim
 //
 // Sends a goodbye to the shim, waits for it to shutdown, and returns the exit code.
@@ -621,7 +659,7 @@ void I_ShutdownShim()
 }
 
 //
-// I_CheckShim
+// I_ProcessShim
 //
 // Main process loop for shims.
 //
