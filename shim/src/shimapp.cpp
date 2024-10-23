@@ -36,7 +36,9 @@
 //
 //-----------------------------------------------------------------------------
 
-#include <cstdint>
+#include <string>
+#include <sstream>
+#include <thread>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN 1 // we don't need the gui
@@ -59,10 +61,6 @@ typedef int PipeType;
 
 #include "shimapp.h"
 #include "discordlib.h"
-
-#include <string>
-#include <sstream>
-#include <thread>
 
 OShimApp::OShimApp()
 {

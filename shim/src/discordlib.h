@@ -36,13 +36,15 @@
 
 #pragma once
 
-#include <cstdint>
-
-#include "discord.h"
-
 #include <memory>
 #include <string>
 #include <sstream>
+
+#include <iostream>
+#include <limits>
+#include <cstdint>
+
+#include <discord.h>
 
 static constexpr uint64_t OdamexDiscordAppId = 1295042491409498222;
 

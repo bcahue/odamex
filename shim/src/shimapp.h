@@ -38,8 +38,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <ctime>
 
 #define DEBUGPIPE 1
