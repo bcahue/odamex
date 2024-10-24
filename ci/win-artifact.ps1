@@ -11,6 +11,8 @@ Set-Location "build"
 New-Item -Name "artifact" -ItemType "directory" | Out-Null
 New-Item -Name "archive" -ItemType "directory" | Out-Null
 
+get-childitem -Directory -Recurse
+
 # Copy all built files into artifact directory
 Copy-Item -Path `
     ".\client\RelWithDebInfo\odamex.exe", `
