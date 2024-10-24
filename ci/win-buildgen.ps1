@@ -7,6 +7,6 @@ Set-Location build
     -DBUILD_OR_FAIL=1 `
     -DBUILD_CLIENT=1 -DBUILD_SERVER=1 `
     -DBUILD_MASTER=1 -DBUILD_LAUNCHER=1 `
-		-DBUILD_SHIM=1
+    -DBUILD_SHIM=1
 
 Set-Location ..
