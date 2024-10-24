@@ -118,8 +118,8 @@ function CopyFiles {
         "${PSScriptRoot}\BuildX64\client\RelWithDebInfo\odamex.exe", `
         "${PSScriptRoot}\BuildX64\client\RelWithDebInfo\SDL2_mixer.dll", `
         "${PSScriptRoot}\BuildX64\client\RelWithDebInfo\SDL2.dll", `
-        "${PSScriptRoot}\BuildX64\odashim\RelWithDebInfo\odashim.exe", `
-        "${PSScriptRoot}\BuildX64\odashim\RelWithDebInfo\discord_game_sdk.dll", `
+        "${PSScriptRoot}\BuildX64\shim\RelWithDebInfo\odashim.exe", `
+        "${PSScriptRoot}\BuildX64\shim\discord_game_sdk.dll", `
         "${PSScriptRoot}\BuildX64\odalaunch\RelWithDebInfo\odalaunch.exe", `
         "${PSScriptRoot}\BuildX64\odalaunch\RelWithDebInfo\wxbase315u_net_vc14x_x64.dll", `
         "${PSScriptRoot}\BuildX64\odalaunch\RelWithDebInfo\wxbase315u_vc14x_x64.dll", `
@@ -151,8 +151,8 @@ function CopyFiles {
         "${PSScriptRoot}\BuildX86\client\RelWithDebInfo\odamex.exe", `
         "${PSScriptRoot}\BuildX86\client\RelWithDebInfo\SDL2_mixer.dll", `
         "${PSScriptRoot}\BuildX86\client\RelWithDebInfo\SDL2.dll", `
-        "${PSScriptRoot}\BuildX86\odashim\RelWithDebInfo\odashim.exe", `
-        "${PSScriptRoot}\BuildX86\odashim\RelWithDebInfo\discord_game_sdk.dll", `
+        "${PSScriptRoot}\BuildX86\shim\RelWithDebInfo\odashim.exe", `
+        "${PSScriptRoot}\BuildX86\shim\discord_game_sdk.dll", `
         "${PSScriptRoot}\BuildX86\odalaunch\RelWithDebInfo\odalaunch.exe", `
         "${PSScriptRoot}\BuildX86\odalaunch\RelWithDebInfo\wxbase315u_net_vc14x.dll", `
         "${PSScriptRoot}\BuildX86\odalaunch\RelWithDebInfo\wxbase315u_vc14x.dll", `
