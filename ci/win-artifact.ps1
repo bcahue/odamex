@@ -11,8 +11,6 @@ Set-Location "build"
 New-Item -Name "artifact" -ItemType "directory" | Out-Null
 New-Item -Name "archive" -ItemType "directory" | Out-Null
 
-get-childitem -Recurse
-
 # Copy all built files into artifact directory
 Copy-Item -Path `
     ".\client\RelWithDebInfo\odamex.exe", `
@@ -24,7 +22,7 @@ Copy-Item -Path `
     ".\odalaunch\RelWithDebInfo\odalaunch.pdb", `
     ".\odalaunch\RelWithDebInfo\*.dll", `
     ".\shim\RelWithDebInfo\odashim.exe", `
-    ".\shim\RelWithDebInfo\discord_game_sdk.dll", `
+    ".\shim\discord_game_sdk.dll", `
     ".\wad\odamex.wad", `
     "C:\Windows\System32\msvcp140.dll", `
     "C:\Windows\System32\vcruntime140.dll", `
