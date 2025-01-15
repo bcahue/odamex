@@ -175,8 +175,6 @@ jobs:
       new_version: ${{ needs.pre_job.outputs.new_version }}
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Required due to the way Git works, without it this action won't be able to find any or the correct tags
     - name: Run Upversion
       id:   upversion
       shell: pwsh
@@ -186,6 +184,8 @@ jobs:
         MAJORVERSION: ${{ needs.pre_job.outputs.major }}
         MINORVERSION: ${{ needs.pre_job.outputs.minor }}
         PATCHVERSION: ${{ needs.pre_job.outputs.patch }}
+    - name: Checkout submodules
+      run: git submodule update --init --recursive
     - name: Download x86 artifacts
       uses: actions/download-artifact@v4
       with:
