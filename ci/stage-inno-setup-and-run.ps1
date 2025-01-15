@@ -18,7 +18,7 @@ else
 
 if ($env:build_number.length -gt 0)
 {
-    Set-Variable -Name "OdamexTestSuffix" -Value "-build_${env:build_number}" # "-build_112"
+    Set-Variable -Name "OdamexTestSuffix" -Value "-prerelease.${env:build_number}" # "-prerelease_112"
 }
 else
 {

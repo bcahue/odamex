@@ -32,7 +32,6 @@ jobs:
         shell: pwsh
         run: |
           $commits = git rev-list HEAD --count
-          Write-Output $commits
           Write-Output "::set-output name=totalCommits::$commits"
       - name: Display GitVersion outputs
         run: |
@@ -191,18 +190,17 @@ jobs:
       shell: bash
       run: |
         touch odamex-src-${{ env.new_version }}.tar.gz
-        tar --transform 's,^,odamex-src-${{ env.new_version }}/,' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tar.xz' --exclude-vcs -czvf odamex-src-${{ env.new_version }}.tar.gz **
+        tar --transform 's,^,odamex-src-${{ env.new_version }}/,' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tar.xz' -czvf odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.tar.gz **
     - name: Create tar.xz
       shell: bash
       run: |
         touch odamex-src-${{ env.new_version }}.tar.xz
-        tar --transform 's,^,odamex-src-${{ env.new_version }}/,' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tar.xz' --exclude-vcs -cJvf odamex-src-${{ env.new_version }}.tar.xz **
+        tar --transform 's,^,odamex-src-${{ env.new_version }}/,' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tar.xz' -cJvf odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.tar.xz **
     - name: Create zip
       shell: pwsh
       run: |
         Copy-Item -Recurse -Force -Path "." -Destination "..\odamex-src-${{ env.new_version }}" -Exclude "*.zip","*.tar.gz","*.tar.xz"
-        Remove-Item -Path "..\odamex-src-${{ env.new_version }}\.git*" -Recurse -Force
-        Compress-Archive -Path "..\odamex-src-${{ env.new_version }}" -DestinationPath "odamex-src-${{ env.new_version }}.zip"
+        Compress-Archive -Path "..\odamex-src-${{ env.new_version }}" -DestinationPath "odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.zip"
     - name: Download x86 artifacts
       uses: actions/download-artifact@v4
       with:
@@ -234,7 +232,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Odamex-src-zip
-        path: './odamex-src-${{ env.new_version }}.zip'
+        path: './odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.zip'
   # build-mingw:
   #   name: Build (MinGW)
   #   runs-on: windows-latest
