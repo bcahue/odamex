@@ -235,7 +235,7 @@ const char* GitRevCountFromSource()
 #ifdef GIT_REV_COUNT_FROM_SOURCE
 	return GIT_REV_COUNT_FROM_SOURCE; // Won't be defined by cmake if 0
 #else
-	return "1"; // The first RC!!
+	return "0";
 #endif
 }
 

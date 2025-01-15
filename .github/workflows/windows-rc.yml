@@ -34,7 +34,7 @@ jobs:
           $lasttag = git describe --tags --abbrev=0
           Write-Output $lasttag
           Write-Output "git rev-list $lasttag..HEAD --count"
-          $commitsaftersource = git rev-list $lasttag..HEAD --count
+          $commitsaftersource = git rev-list $lasttag..${{ steps.gitversion.outputs.branchName }} --count
           Write-Output $commitsaftersource
           Write-Output "::set-output name=commitsAfterSource::$commitsaftersource"
       - name: Display GitVersion outputs
