@@ -174,33 +174,6 @@ jobs:
       build_number: ${{ needs.pre_job.outputs.build_number }}
       new_version: ${{ needs.pre_job.outputs.new_version }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Run Upversion
-      id:   upversion
-      shell: pwsh
-      run: |
-        .\tools\upversion\upversion.ps1
-      env:
-        MAJORVERSION: ${{ needs.pre_job.outputs.major }}
-        MINORVERSION: ${{ needs.pre_job.outputs.minor }}
-        PATCHVERSION: ${{ needs.pre_job.outputs.patch }}
-    - name: Checkout submodules
-      run: git submodule update --init --recursive
-    - name: Create tar.gz
-      shell: bash
-      run: |
-        touch odamex-src-${{ env.new_version }}.tar.gz
-        tar --transform 's,^,odamex-src-${{ env.new_version }}/,' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tar.xz' -czvf odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.tar.gz **
-    - name: Create tar.xz
-      shell: bash
-      run: |
-        touch odamex-src-${{ env.new_version }}.tar.xz
-        tar --transform 's,^,odamex-src-${{ env.new_version }}/,' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tar.xz' -cJvf odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.tar.xz **
-    - name: Create zip
-      shell: pwsh
-      run: |
-        Copy-Item -Recurse -Force -Path "." -Destination "..\odamex-src-${{ env.new_version }}" -Exclude "*.zip","*.tar.gz","*.tar.xz"
-        Compress-Archive -Path "..\odamex-src-${{ env.new_version }}" -DestinationPath "odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.zip"
     - name: Download x86 artifacts
       uses: actions/download-artifact@v4
       with:
@@ -218,21 +191,6 @@ jobs:
       with:
         name: Odamex-Installer
         path: 'Output/*.exe'
-    - name: Upload tar.xz
-      uses: actions/upload-artifact@v4
-      with:
-        name: Odamex-tar-xz
-        path: './*.tar.xz'
-    - name: Upload tar.gz
-      uses: actions/upload-artifact@v4
-      with:
-        name: Odamex-tar-gz
-        path: './*.tar.gz'
-    - name: Upload zip
-      uses: actions/upload-artifact@v4
-      with:
-        name: Odamex-src-zip
-        path: './odamex-src-${{ env.new_version }}-prerelease.${{env.build_number}}.zip'
   # build-mingw:
   #   name: Build (MinGW)
   #   runs-on: windows-latest
