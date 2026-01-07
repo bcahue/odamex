@@ -3,3 +3,4 @@ branches:
     regex: ^release[/-]
     prevent-increment:
       when-current-commit-tagged: true
+      of-merged-branch: true
