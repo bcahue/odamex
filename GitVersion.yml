@@ -1,8 +1,6 @@
-strategies:
-- Fallback
-- VersionInBranchName
 branches:
   release:
+    increment: None
     regex: ^release[/-]
     prevent-increment:
       when-current-commit-tagged: true
