@@ -302,6 +302,8 @@ enum clc_t
 	clc_netcmd,  // [AM] Send a string command to the server.
 	clc_spy,     // [SL] Tell server to send info about this player
 	clc_privmsg, // [AM] Targeted chat to a specific player.
+	clc_authrefresh, // [auth] B9 - carries the player's current game ticket (JWT)
+	                 // to extend their authenticated session before exp lapses.
 };
 
 inline auto format_as(clc_t clc)

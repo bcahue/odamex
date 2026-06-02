@@ -34,3 +34,6 @@
 [submodule "libraries/cpptrace"]
 	path = libraries/cpptrace
 	url = https://github.com/jeremy-rifkin/cpptrace.git
+[submodule "libraries/wolfssl"]
+	path = libraries/wolfssl
+	url = https://github.com/wolfSSL/wolfssl.git

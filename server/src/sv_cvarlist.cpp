@@ -238,6 +238,30 @@ CVAR(			sv_dmfarspawn, "0", "EXPERIMENTAL: When enabled in DM, players will spaw
                 "from each other.",
 				CVARTYPE_BOOL, CVAR_SERVERARCHIVE | CVAR_LATCH | CVAR_SERVERINFO)
 
+// Authentication settings
+// -----------------------
+
+CVAR(			sv_auth_enabled, "0", "Enable player authentication via game tickets",
+				CVARTYPE_BOOL, CVAR_SERVERARCHIVE | CVAR_LATCH | CVAR_SERVERINFO)
+
+CVAR(			sv_auth_api_url, "", "Base URL of the Odamex auth API (e.g. https://api.odamex.org)",
+				CVARTYPE_STRING, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE)
+
+CVAR(			sv_auth_server_id, "0", "This server's registered ID for ticket audience validation",
+     CVARTYPE_INT, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE | CVAR_LATCH)
+
+// Credentials for the server's Keycloak confidential client. Used to obtain a
+// service token (client_credentials grant) for posting player events and stats
+// to the API. Not exposed as SERVERINFO -- the secret must never leave the host.
+CVAR(			sv_auth_token_url, "", "Keycloak token endpoint (…/realms/<realm>/protocol/openid-connect/token)",
+					CVARTYPE_STRING, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE)
+
+CVAR(			sv_auth_client_id, "", "Keycloak confidential client id for this server",
+					CVARTYPE_STRING, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE)
+
+CVAR(			sv_auth_client_secret, "", "Keycloak confidential client secret for this server",
+					CVARTYPE_STRING, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE)
+
 // Hacky abominations that should be purged with fire and brimstone
 // =================================================================
 

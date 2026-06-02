@@ -1077,6 +1077,7 @@ static void InitNetMessageFormats()
 	CLC_INFO(clc_netcmd);
 	CLC_INFO(clc_spy);
 	CLC_INFO(clc_privmsg);
+	CLC_INFO(clc_authrefresh);
 	CLC_INFO(clc_max);
 }
 

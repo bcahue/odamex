@@ -63,6 +63,8 @@
 #include "r_local.h"
 #include "r_sky.h"
 #include "s_sound.h"
+#include "sv_apiclient.h"
+#include "sv_auth.h"
 #include "sv_banlist.h"
 #include "sv_main.h"
 #include "v_video.h"
@@ -387,6 +389,15 @@ void D_DoomMain()
 
 	// [AM] Initialize banlist
 	SV_InitBanlist();
+
+	// Initialize player authentication
+	SV_AuthInit();
+	atterm(SV_AuthShutdown);
+
+	// Start the async API client (player events / stats). Must follow
+	// SV_AuthInit, which performs curl_global_init.
+	SV_ApiInit();
+	atterm(SV_ApiShutdown);
 
 	PrintFmt(PRINT_HIGH, "========== Odamex Server Initialized ==========\n");
 

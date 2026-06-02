@@ -62,6 +62,8 @@
 #include "sv_maplist.h"
 #include "g_levelstate.h"
 #include "g_gametype.h"
+#include "sv_apiclient.h"
+#include "sv_auth.h"
 #include "sv_banlist.h"
 #include "d_main.h"
 #include "v_textcolors.h"
@@ -117,6 +119,7 @@ EXTERN_CVAR(sv_teamsinplay)
 EXTERN_CVAR(g_winnerstays)
 EXTERN_CVAR(debug_disconnect)
 EXTERN_CVAR(g_resetinvonexit)
+EXTERN_CVAR(sv_auth_enabled)
 
 void SexMessage (const char *from, char *to, gender_t gender,
 	std::string_view victim, std::string_view killer, std::string_view spree);
@@ -1867,6 +1870,77 @@ void SV_ConnectClient()
 		return;
 	}
 
+	// [auth] Read the player's game ticket (protocol v66+). Every v66 client
+	// sends this field; older clients are already rejected by the version check
+	// above. When sv_auth_enabled is off we still read it (to stay in sync with
+	// the packet layout) but ignore its contents.
+	std::string ticket = MSG_ReadString();
+	if (sv_auth_enabled)
+	{
+		if (!SV_AuthReady())
+		{
+			PrintFmt("{} disconnected (auth service unavailable).\n",
+			         NET_AdrToString(net_from));
+			MSG_WriteSVC(&cl->reliablebuf,
+			             SVC_Print(PRINT_HIGH,
+			                       "This server requires authentication but its auth "
+			                       "service is unavailable. Try again later.\n"));
+			SV_SendPacket(*player);
+			SV_DropClient(*player);
+			return;
+		}
+
+		if (ticket.empty())
+		{
+			PrintFmt("{} disconnected (no game ticket).\n", NET_AdrToString(net_from));
+			MSG_WriteSVC(&cl->reliablebuf,
+			             SVC_Print(PRINT_HIGH,
+			                       "This server requires authentication. Sign in with "
+			                       "the launcher before connecting.\n"));
+			SV_SendPacket(*player);
+			SV_DropClient(*player);
+			return;
+		}
+
+		TicketResult auth = SV_AuthVerifyTicket(ticket);
+		if (!auth.valid)
+		{
+			PrintFmt("{} disconnected (ticket rejected: {}).\n",
+			         NET_AdrToString(net_from), auth.reason);
+			MSG_WriteSVC(
+			    &cl->reliablebuf,
+			    SVC_Print(PRINT_HIGH,
+			              fmt::format("Authentication failed: {}.\n", auth.reason)));
+			SV_SendPacket(*player);
+			SV_DropClient(*player);
+			return;
+		}
+
+		// Reject replayed tickets: each jti is single-use within its lifetime.
+		if (!SV_AuthRegisterJti(auth.jti, auth.expiresAt))
+		{
+			PrintFmt("{} disconnected (ticket replay: jti {}).\n",
+			         NET_AdrToString(net_from), auth.jti);
+			MSG_WriteSVC(&cl->reliablebuf,
+			             SVC_Print(PRINT_HIGH,
+			                       "Authentication failed: ticket already used.\n"));
+			SV_SendPacket(*player);
+			SV_DropClient(*player);
+			return;
+		}
+
+		// Ticket verified. Stash the player's identity on the client for
+		// event posts (B5) and expiry enforcement (B8).
+		cl->auth_sub = auth.sub;
+		cl->auth_jti = auth.jti;
+		cl->auth_exp = auth.expiresAt;
+		cl->auth_last_refresh = static_cast<int64_t>(time(NULL));
+		cl->auth_refresh_abuse = 0;
+
+		PrintFmt("{} authenticated as {} (jti {}).\n", NET_AdrToString(net_from),
+		         auth.sub, auth.jti);
+	}
+
 	// send consoleplayer number
 	MSG_WriteSVC(&cl->reliablebuf, SVC_ConsolePlayer(*player, cl->digest));
 	SV_SendPacket(*player);
@@ -1918,6 +1992,14 @@ void SV_ConnectClient2(player_t& player)
 	SV_ClientFullUpdate(player);
 
 	SV_BroadcastPrintFmt("{} has connected.\n", player.userinfo.netname);
+
+	// [auth] Report the join to the API for authenticated players (B5).
+	// Fire-and-forget; the worker thread handles delivery off the game loop.
+	if (!cl->auth_sub.empty())
+	{
+		SV_ApiPostPlayerEvent(cl->auth_sub, cl->auth_jti, "join", time(NULL),
+		                      NET_AdrToString(cl->address));
+	}
 
 	// tell others clients about it
 	for (Players::iterator pit = players.begin(); pit != players.end(); ++pit)
@@ -1990,6 +2072,15 @@ void SV_DisconnectClient(player_t &who)
 
 	Maplist_Disconnect(who);
 	Vote_Disconnect(who);
+
+	// [auth] Report the leave to the API for authenticated players (B5).
+	// This funnel runs exactly once per player (guarded above), so the join
+	// and leave events stay balanced.
+	if (!who.client.auth_sub.empty())
+	{
+		SV_ApiPostPlayerEvent(who.client.auth_sub, who.client.auth_jti, "leave",
+		                      time(NULL), NET_AdrToString(who.client.address));
+	}
 
 	who.playerstate = PST_DISCONNECT;
 
@@ -3795,6 +3886,78 @@ void SV_WantWad(player_t &player)
 }
 
 //
+// SV_AuthRefresh
+//
+// [auth] B9: handle a clc_authrefresh control command. The connected client
+// periodically sends its *current* game ticket so we can extend the session
+// before the old ticket's exp lapses (B8). We re-run the full ticket
+// verification (signature + claims + srv match) and, on success, push the
+// player's stored exp forward. On any failure we silently ignore it -- the B8
+// expiry timer will kick them when their old ticket runs out.
+//
+// The command is trivially spammable, so anti-abuse comes first: an oversized
+// payload or an attempt that arrives faster than the floor is dropped *before*
+// any signature work, and sustained flooding is a kick-worthy offense.
+//
+static void SV_AuthRefresh(player_t& player)
+{
+	// Always consume the JWT from the stream first, so the command parser stays
+	// aligned even when auth is off, the payload is oversized, or we throttle.
+	std::string ticket(MSG_ReadString());
+
+	client_t& cl = player.client;
+
+	// Only meaningful for authenticated players on an auth-enabled server.
+	if (!sv_auth_enabled || cl.auth_sub.empty())
+		return;
+
+	const size_t MAX_TICKET_BYTES = 4096; // a real ES256 game ticket is well under this
+	const int64_t REFRESH_FLOOR = 60;     // min seconds between processed refreshes
+	const int REFRESH_ABUSE_LIMIT = 30;   // consecutive too-fast attempts before a kick
+
+	// Cap the JWT size before any parsing so an oversized payload can't be used
+	// as a parse-cost / amplification vector. Oversized is never legitimate.
+	if (ticket.size() > MAX_TICKET_BYTES)
+	{
+		if (++cl.auth_refresh_abuse > REFRESH_ABUSE_LIMIT)
+			SV_KickPlayer(player, "auth refresh flooding");
+		return;
+	}
+
+	int64_t now = static_cast<int64_t>(time(NULL));
+
+	// Per-player throttle: ignore refreshes faster than the floor, before
+	// verifying, so spam costs near-zero CPU. Count the abuse; sustained
+	// flooding gets the client kicked.
+	if (now - cl.auth_last_refresh < REFRESH_FLOOR)
+	{
+		if (++cl.auth_refresh_abuse > REFRESH_ABUSE_LIMIT)
+			SV_KickPlayer(player, "auth refresh flooding");
+		return;
+	}
+
+	// Legitimate cadence: reset the abuse counter and record that we processed
+	// one now, so even a verification failure still costs the floor before the
+	// next accepted attempt.
+	cl.auth_refresh_abuse = 0;
+	cl.auth_last_refresh = now;
+
+	TicketResult res = SV_AuthVerifyTicket(ticket);
+	if (!res.valid)
+		return; // ignore; B8 will reap them when the old ticket lapses
+
+	// Bind the refresh to the identity that connected: a valid ticket minted for
+	// a different subject must never hijack this player's session.
+	if (res.sub != cl.auth_sub)
+		return;
+
+	// Extend (never shorten) the session. exp only moves forward as the API
+	// mints fresh, longer-lived tickets.
+	if (res.expiresAt > cl.auth_exp)
+		cl.auth_exp = res.expiresAt;
+}
+
+//
 // SV_ParseCommands
 //
 
@@ -3887,6 +4050,10 @@ void SV_ParseCommands(player_t &player)
 
 		case clc_netcmd:
 			SV_NetCmd(player);
+			break;
+
+		case clc_authrefresh:
+			SV_AuthRefresh(player);
 			break;
 
 		case clc_kill:
@@ -4078,6 +4245,56 @@ void SV_DisplayTics()
 }
 
 //
+// SV_CheckTicketExpiries
+//
+// [auth] B8: enforce per-player ticket expiry. A player's session lives only as
+// long as the ticket they last presented; the refresh command (B9) extends
+// auth_exp as fresh tickets arrive. If a player's ticket lapses and no valid
+// refresh has updated their expiry, drop them with an auth_expired reason. This
+// is what stops a banned/revoked player from holding a session indefinitely:
+// renewal requires the API to still be willing to mint them a ticket.
+//
+static void SV_CheckTicketExpiries()
+{
+	if (!sv_auth_enabled)
+		return;
+
+	// exp is second-granular, so checking more than once per second is wasteful.
+	static int64_t lastCheck = 0;
+	int64_t now = static_cast<int64_t>(time(NULL));
+	if (now == lastCheck)
+		return;
+	lastCheck = now;
+
+	// Slack past exp before we act, to absorb clock skew and in-flight refreshes.
+	const int64_t grace = 45;
+
+	for (Players::iterator it = players.begin(); it != players.end(); ++it)
+	{
+		client_t& cl = it->client;
+
+		// Only authenticated players carry an expiry to enforce.
+		if (cl.auth_sub.empty() || cl.auth_exp == 0)
+			continue;
+
+		// Already on their way out; the removal pass will reap them.
+		if (it->playerstate == PST_DISCONNECT)
+			continue;
+
+		if (now > cl.auth_exp + grace)
+		{
+			PrintFmt("{} ticket expired (auth_expired), kicking.\n",
+			         NET_AdrToString(cl.address));
+			SV_PlayerPrintFmt(PRINT_HIGH, it->id,
+			                  "Your authentication ticket expired (auth_expired). "
+			                  "Reconnect through the launcher.\n");
+			cl.displaydisconnect = false; // we've already told them why
+			SV_DropClient(*it);
+		}
+	}
+}
+
+//
 // SV_RunTics
 //
 // Checks for incoming packets, processes console usage, and calls SV_StepTics.
@@ -4091,6 +4308,8 @@ void SV_RunTics()
 		AddCommandString(cmd);
 
 	SV_BanlistTics();
+	SV_AuthTick();
+	SV_CheckTicketExpiries();
 	SV_UpdateMaster();
 
 	// only run game-related tickers if the server isn't frozen

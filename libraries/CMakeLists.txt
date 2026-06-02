@@ -158,6 +158,10 @@ include(fmt-lib.cmake)
 
 include(jsoncpp-lib.cmake)
 
+include(wolfssl-lib.cmake)
+
+include(jwt-cpp-lib.cmake)
+
 include(miniupnp-lib.cmake)
 
 include(protobuf-lib.cmake)

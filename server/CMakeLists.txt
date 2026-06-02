@@ -14,7 +14,10 @@ endif()
 add_definitions(-DSERVER_APP)
 
 # Server
-file(GLOB SERVER_SOURCES src/*.cpp src/*.h)
+file(GLOB SERVER_SOURCES
+  CONFIGURE_DEPENDS
+  src/*.cpp
+  src/*.h)
 if(WIN32)
   file(GLOB SERVER_WIN32_SOURCES win32/*.h)
   configure_file(win32/server.rc.in "${CMAKE_CURRENT_BINARY_DIR}/server.rc" @ONLY)
@@ -50,7 +53,7 @@ if(WIN32)
   target_compile_definitions(odasrv PRIVATE _WIN32_WINNT=0x0602)
 endif()
 
-target_link_libraries(odasrv fmt::fmt tinylibs ZLIB::ZLIB odamex-common odaproto minilzo cpptrace::cpptrace)
+target_link_libraries(odasrv fmt::fmt tinylibs ZLIB::ZLIB odamex-common odaproto minilzo cpptrace::cpptrace curl_interface jwt-cpp)
 
 if(USE_INTERNAL_JSONCPP)
   target_link_libraries(odasrv jsoncpp_static)

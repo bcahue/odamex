@@ -21,3 +21,27 @@
 //
 //-----------------------------------------------------------------------------
 
+#pragma once
+
+#include <string>
+
+// ===========================================================================
+// B7 SCAFFOLD — match-stats serialization + upload.
+//
+// This module turns the in-memory results of a finished match into the JSON
+// blob the API expects and hands it to the async API client for upload. The v1
+// schema is deliberately loose (an opaque blob), but the exact shape still needs
+// a design pass, so the bodies below are stubs. See the v1 shipping plan, B7.
+// ===========================================================================
+
+// Serialize the current/just-finished match into the API's stats JSON blob.
+// TODO(B7): walk the existing match-end results and emit the agreed schema.
+// Returns an empty string until implemented.
+std::string SV_SerializeMatchStats();
+
+// Entry point to call at match end: serialize, then hand off to the async
+// uploader (SV_ApiUploadMatchStats). Currently inert.
+// TODO(B7): invoke from the match-end / intermission path once the serializer
+// and the API contract are settled.
+void SV_UploadMatchStats();
+

@@ -72,6 +72,7 @@
 #include "m_consolecommandstream.h"
 
 #include <bitset>
+#include <fstream>
 #include <set>
 #include <sstream>
 
@@ -156,6 +157,7 @@ EXTERN_CVAR (cl_autoaim)
 EXTERN_CVAR (cl_interp)
 EXTERN_CVAR (cl_serverdownload)
 EXTERN_CVAR (cl_forcedownload)
+EXTERN_CVAR (cl_authticket_file)
 
 // [SL] Force enemies to have the specified color
 EXTERN_CVAR (r_forceenemycolor)
@@ -1842,6 +1844,41 @@ void CL_InitNetwork (void)
     connected = false;
 }
 
+//
+// CL_ReadGameTicket
+//
+// Reads the current game ticket from the file the launcher maintains
+// (cl_authticket_file, shipping-plan C8). Returns an empty string when no
+// file is configured, the file is missing, or it can't be read -- in which
+// case the client connects without a ticket and an auth-required server will
+// refuse it. Whitespace (trailing newline) is trimmed; a JWT contains none.
+//
+static std::string CL_ReadGameTicket()
+{
+	const char* path = cl_authticket_file.cstring();
+	if (!path || !path[0])
+		return "";
+
+	std::ifstream file(path, std::ios::binary);
+	if (!file.is_open())
+	{
+		PrintFmt(PRINT_WARNING, "Could not open game ticket file '{}'\n", path);
+		return "";
+	}
+
+	std::stringstream ss;
+	ss << file.rdbuf();
+	std::string ticket = ss.str();
+
+	// Trim surrounding whitespace the launcher may have written.
+	const std::string ws = " \t\r\n";
+	size_t first = ticket.find_first_not_of(ws);
+	if (first == std::string::npos)
+		return "";
+	size_t last = ticket.find_last_not_of(ws);
+	return ticket.substr(first, last - first + 1);
+}
+
 void CL_TryToConnect(uint32_t server_token)
 {
 	if (!serveraddr.ip[0])
@@ -1873,6 +1910,10 @@ void CL_TryToConnect(uint32_t server_token)
 		MSG_WriteLong(&net_buffer, rate);
 
         MSG_WriteString(&net_buffer, connectpasshash.c_str());
+
+		// [auth] Present the launcher-issued game ticket (protocol v66+). Empty
+		// when not signed in; the server refuses if it requires auth.
+		MSG_WriteString(&net_buffer, CL_ReadGameTicket().c_str());
 
 		NET_SendPacket(net_buffer, serveraddr);
 		SZ_Clear(&net_buffer);

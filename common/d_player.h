@@ -309,6 +309,18 @@ public:
 		bool        allow_rcon;     // allow remote admin
 		bool		displaydisconnect; // display disconnect message when disconnecting
 
+		// [auth] Verified identity from the player's game ticket (B3). Empty when
+		// sv_auth_enabled is off or the client connected without a ticket.
+		std::string	auth_sub;		// Keycloak subject ID from the verified ticket
+		std::string	auth_jti;		// unique ticket ID presented at connect (replay tracking, B4)
+		int64_t		auth_exp;		// ticket expiry (unix seconds); 0 when unauthenticated
+
+		// [auth] Refresh anti-abuse state (B9). Throttles the clc_authrefresh
+		// control command so a buggy/malicious client can't force constant
+		// signature verification.
+		int64_t		auth_last_refresh;	// unix time of last processed refresh (incl. connect)
+		int			auth_refresh_abuse;	// consecutive too-fast refresh attempts
+
 		struct download_t
 		{
 			std::string name = "";
@@ -344,6 +356,11 @@ public:
 			digest = "";
 			allow_rcon = false;
 			displaydisconnect = true;
+			auth_sub = "";
+			auth_jti = "";
+			auth_exp = 0;
+			auth_last_refresh = 0;
+			auth_refresh_abuse = 0;
 		}
 
 		client_t(const client_t &other)
@@ -364,6 +381,11 @@ public:
 			digest(other.digest),
 			allow_rcon(false),
 			displaydisconnect(true),
+			auth_sub(other.auth_sub),
+			auth_jti(other.auth_jti),
+			auth_exp(other.auth_exp),
+			auth_last_refresh(other.auth_last_refresh),
+			auth_refresh_abuse(other.auth_refresh_abuse),
 			download(other.download)
 		{
 			for (size_t i = 0; i < ARRAY_LENGTH(oldpackets); i++)
@@ -394,6 +416,11 @@ public:
 			digest = other.digest;
 			allow_rcon = false;
 			displaydisconnect = true;
+			auth_sub = other.auth_sub;
+			auth_jti = other.auth_jti;
+			auth_exp = other.auth_exp;
+			auth_last_refresh = other.auth_last_refresh;
+			auth_refresh_abuse = other.auth_refresh_abuse;
 			download = other.download;
 			for (size_t i = 0; i < ARRAY_LENGTH(oldpackets); i++)
 			{
