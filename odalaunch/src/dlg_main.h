@@ -55,6 +55,13 @@
 #include "query_thread.h"
 #include "net_packet.h"
 
+#if wxCHECK_VERSION(3, 1, 5)
+	#include <wx/webrequest.h>
+	#define ODALAUNCH_USE_WEB_REQUEST 1
+#else
+	#define ODALAUNCH_USE_WEB_REQUEST 0
+#endif
+
 #include "launcher_session.h"
 #include "launcher_login.h"
 #include "ticket_refresher.h"
@@ -71,7 +78,7 @@ public:
 	virtual ~dlgMain();
 
 	odalpapi::Server         NullServer;
-	odalpapi::Server*        QServer;
+	std::unique_ptr<odalpapi::Server[]> QServer;
 	odalpapi::MasterServer   MServer;
 
 protected:
@@ -80,6 +87,7 @@ protected:
 
 	void OnOpenSettingsDialog(wxCommandEvent& event);
 	void OnOpenWebsite(wxCommandEvent& event);
+	void OnOpenReleases(wxCommandEvent& event);
 	void OnOpenForum(wxCommandEvent& event);
 	void OnOpenWiki(wxCommandEvent& event);
 	void OnOpenChangeLog(wxCommandEvent& event);
@@ -108,6 +116,10 @@ protected:
 	void OnServerListDoubleClick(wxListEvent& event);
 
 	void OnCheckVersion(wxCommandEvent &event);
+	void SendCheckVersionRequest();
+	#if ODALAUNCH_USE_WEB_REQUEST
+	void OnCheckVersionResponse(wxWebRequestEvent& evt);
+	#endif
 
 	void OnShow(wxShowEvent& event);
 	void OnClose(wxCloseEvent& event);
@@ -120,9 +132,6 @@ protected:
 
 	void DoGetList(bool IsARTRefresh = false);
 	void DoRefreshList(bool IsARTRefresh = false);
-
-    void GetWebsitePageSource(wxString &SiteSrc);
-    void GetVersionInfoFromWebsite(const wxString &SiteSrc, wxString &ver);
 
 	void LoadMasterServers();
 
@@ -159,6 +168,7 @@ protected:
 	wxStatusBar* m_StatusBar;
 	wxProcess* m_Process;
 
+	bool m_UpdateCheckWasAutomatic = false;
 	bool m_ClientIsRunning;
 
 	OdaInfoBar *InfoBar;
