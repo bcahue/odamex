@@ -1857,24 +1857,45 @@ void CL_InitNetwork (void)
 }
 
 //
+// CL_DefaultTicketPath
+//
+// The well-known location the launcher writes the game ticket to when
+// cl_authticket_file is left empty (shipping-plan Phase D handoff). Anchored to
+// the per-user directory (M_GetUserDir, e.g. Documents\My Games\Odamex on
+// Windows, ~/.odamex on POSIX) rather than the write dir, so the launcher --
+// a separate process that can't see the game's portable-vs-installed state --
+// can compute the identical path from its own per-user location.
+//
+static std::string CL_DefaultTicketPath()
+{
+	return M_GetUserDir() + PATHSEP "auth" PATHSEP "authticket.jwt";
+}
+
+//
 // CL_ReadGameTicket
 //
 // Reads the current game ticket from the file the launcher maintains
-// (cl_authticket_file, shipping-plan C8). Returns an empty string when no
-// file is configured, the file is missing, or it can't be read -- in which
-// case the client connects without a ticket and an auth-required server will
-// refuse it. Whitespace (trailing newline) is trimmed; a JWT contains none.
+// (cl_authticket_file, shipping-plan C8). When the cvar is empty, falls back to
+// the well-known launcher location (CL_DefaultTicketPath) so a ticket written
+// by the launcher is picked up with no configuration. Returns an empty string
+// when the file is missing or can't be read -- in which case the client
+// connects without a ticket and an auth-required server will refuse it.
+// Whitespace (trailing newline) is trimmed; a JWT contains none.
 //
 static std::string CL_ReadGameTicket()
 {
-	const char* path = cl_authticket_file.cstring();
-	if (!path || !path[0])
-		return "";
+	const char* cvarPath = cl_authticket_file.cstring();
+	const bool explicitPath = (cvarPath && cvarPath[0]);
+	const std::string path = explicitPath ? std::string(cvarPath) : CL_DefaultTicketPath();
 
 	std::ifstream file(path, std::ios::binary);
 	if (!file.is_open())
 	{
-		PrintFmt(PRINT_WARNING, "Could not open game ticket file '{}'\n", path);
+		// Only warn for an explicitly-configured path: a missing default file
+		// just means the player isn't using the launcher / hasn't signed in,
+		// which is a normal anonymous connect, not a misconfiguration.
+		if (explicitPath)
+			PrintFmt(PRINT_WARNING, "Could not open game ticket file '{}'\n", path);
 		return "";
 	}
 

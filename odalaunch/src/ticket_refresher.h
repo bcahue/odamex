@@ -47,6 +47,16 @@ class TicketRefresher
 	TicketRefresher(const TicketRefresher&) = delete;
 	TicketRefresher& operator=(const TicketRefresher&) = delete;
 
+	// The well-known ticket-file location shared with the game client. The
+	// client falls back to this exact path when cl_authticket_file is empty
+	// (see CL_DefaultTicketPath in cl_main.cpp), so the two must agree. Anchored
+	// to the per-user directory that mirrors the game's M_GetUserDir():
+	//   Windows : <Documents>\My Games\Odamex\auth\authticket.jwt
+	//   other   : <home>/.odamex/auth/authticket.jwt
+	// Computed here (in the launcher, a separate process) without reference to
+	// the game's portable-vs-installed write dir, which the launcher can't see.
+	static wxString DefaultTicketFilePath();
+
 	// Mint one ticket synchronously (so the game has a ticket to present on its
 	// initial connect), then start the background refresh loop. Returns false if
 	// that first mint fails.

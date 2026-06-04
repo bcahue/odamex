@@ -83,10 +83,33 @@
 
 #include "launcher_registration.h"
 #include "hwid.h"
+#include "ticket_refresher.h"
 
 using namespace odalpapi;
 
 extern int NUM_THREADS;
+
+namespace
+{
+// Pull the backend server_id from a queried server's broadcast cvars, but only
+// when it advertises authentication. sv_auth_enabled is a CVAR_SERVERINFO bool
+// that the protocol broadcasts *only when true* (see Server::ReadCvars), so its
+// mere presence means auth is on; sv_auth_server_id (int) carries the id in i32.
+// Returns 0 when the server isn't auth-enabled or advertises no id.
+int AuthServerIdFromServer(const Server& srv)
+{
+	bool authEnabled = false;
+	int serverId = 0;
+	for (const Cvar_t& cv : srv.Info.Cvars)
+	{
+		if (cv.Name == "sv_auth_enabled")
+			authEnabled = true;
+		else if (cv.Name == "sv_auth_server_id")
+			serverId = cv.i32;
+	}
+	return authEnabled ? serverId : 0;
+}
+} // namespace
 
 // Control ID assignments for events
 // application icon
@@ -772,6 +795,13 @@ void dlgMain::OnProcessTerminate(wxProcessEvent& event)
 {
 	m_ClientIsRunning = false;
 
+	// The game has exited; stop minting tickets for the session it held.
+	if(m_TicketRefresher)
+	{
+		m_TicketRefresher->Stop();
+		m_TicketRefresher.reset();
+	}
+
 	delete m_Process;
 }
 
@@ -1381,7 +1411,7 @@ void dlgMain::OnLaunch(wxCommandEvent& event)
 	}
 
 	LaunchGame(stdstr_towxstr(QServer[i].GetAddress()), OdamexDirectory,
-	           DelimWadPaths, Password);
+	           DelimWadPaths, Password, AuthServerIdFromServer(QServer[i]));
 }
 
 // Update program state and get a new list of servers
@@ -1495,8 +1525,36 @@ void dlgMain::OnServerListClick(wxListEvent& event)
 		m_LstOdaSrvDetails->LoadDetailsFromServer(QServer[i]);
 }
 
+void dlgMain::StartTicketRefresher(int serverId)
+{
+	// Replace any prior refresher (e.g. relaunching at a different server before
+	// the previous game process has fully exited).
+	if(m_TicketRefresher)
+	{
+		m_TicketRefresher->Stop();
+		m_TicketRefresher.reset();
+	}
+
+	const wxString hwidJson = wxString::FromUTF8(Hwid::CollectPayloadJson());
+	auto refresher = std::make_unique<TicketRefresher>(
+	    m_Session->ApiBaseUrl(), m_Session->SessionToken(), m_Session->Key(),
+	    serverId, hwidJson, TicketRefresher::DefaultTicketFilePath());
+
+	// Start() mints the first ticket synchronously so the file exists before the
+	// game connects -- a brief network round-trip, hence the busy cursor.
+	wxBusyCursor busy;
+	if(refresher->Start())
+		m_TicketRefresher = std::move(refresher);
+	else
+		wxMessageBox("Could not obtain a game ticket for this server.\n\n"
+		             "You may need to sign in again. Connecting without "
+		             "authentication; the server may refuse the connection.",
+		             "Authentication", wxOK | wxICON_WARNING, this);
+}
+
 void dlgMain::LaunchGame(const wxString& Address, const wxString& ODX_Path,
-                         const wxString& waddirs, const wxString& Password)
+                         const wxString& waddirs, const wxString& Password,
+                         int authServerId)
 {
 	wxFileConfig ConfigInfo;
 
@@ -1544,6 +1602,24 @@ void dlgMain::LaunchGame(const wxString& Address, const wxString& ODX_Path,
 		CmdLine += " -waddir \"";
 		CmdLine += waddirs;
 		CmdLine += "\"";
+	}
+
+	// Authenticated server + signed in: start the ticket refresher (which mints
+	// the first ticket synchronously, so the file is present before the game
+	// connects) and point the client at it. The path matches CL_DefaultTicketPath
+	// on the client, so the explicit arg and the client's empty-cvar default
+	// resolve to the same place. Skipped for anonymous servers / signed-out
+	// users, so the client connects without a (possibly stale) ticket.
+	if(authServerId > 0 && m_Session && m_Session->IsSignedIn() &&
+	   m_Session->EnsureKey())
+	{
+		StartTicketRefresher(authServerId);
+		if(m_TicketRefresher)
+		{
+			CmdLine += " +set cl_authticket_file \"";
+			CmdLine += TicketRefresher::DefaultTicketFilePath();
+			CmdLine += "\"";
+		}
 	}
 
 	// Check for any user command line arguments

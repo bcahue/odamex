@@ -57,6 +57,7 @@
 
 #include "launcher_session.h"
 #include "launcher_login.h"
+#include "ticket_refresher.h"
 
 // custom event declarations
 wxDECLARE_EVENT(wxEVT_THREAD_MONITOR_SIGNAL, wxCommandEvent);
@@ -133,8 +134,16 @@ protected:
 		return m_ClientIsRunning;
 	};
 
+	// authServerId > 0 (from an authenticated server's broadcast
+	// sv_auth_server_id) starts a TicketRefresher for that server before launch
+	// and points the game client at the ticket file. 0 = no auth (anonymous).
 	void LaunchGame(const wxString& Address, const wxString& ODX_Path,
-	                const wxString& waddirs, const wxString& Password = "");
+	                const wxString& waddirs, const wxString& Password = "",
+	                int authServerId = 0);
+
+	// Stop any running refresher and start a fresh one for serverId, minting the
+	// first ticket synchronously. Leaves m_TicketRefresher null on failure.
+	void StartTicketRefresher(int serverId);
 
 	LstOdaServerList* m_LstCtrlServers;
 	LstOdaPlayerList* m_LstCtrlPlayers;
@@ -284,6 +293,9 @@ protected:
 	// browser login flow. Result is marshalled back to the UI thread via a
 	// wxEVT_LAUNCHER_LOGIN_DONE command event.
 	std::unique_ptr<LauncherSession> m_Session;
+	// Live while connected to an authenticated server: mints/refreshes the game
+	// ticket in the background. Started in LaunchGame, stopped on game exit.
+	std::unique_ptr<TicketRefresher> m_TicketRefresher;
 	std::thread m_AuthThread;
 	bool m_AuthBusy;
 	// Shared with the login worker so shutdown (or a future cancel button) can

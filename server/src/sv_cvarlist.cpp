@@ -248,7 +248,7 @@ CVAR(			sv_auth_api_url, "", "Base URL of the Odamex auth API (e.g. https://api.
 				CVARTYPE_STRING, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE)
 
 CVAR(			sv_auth_server_id, "0", "This server's registered ID for ticket audience validation",
-     CVARTYPE_INT, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE | CVAR_LATCH)
+     CVARTYPE_INT, CVAR_SERVERARCHIVE | CVAR_NOENABLEDISABLE | CVAR_SERVERINFO | CVAR_LATCH)
 
 // Credentials for the server's Keycloak confidential client. Used to obtain a
 // service token (client_credentials grant) for posting player events and stats

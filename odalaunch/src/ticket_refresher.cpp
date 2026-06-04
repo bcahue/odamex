@@ -29,6 +29,9 @@
 
 #include <wx/file.h>
 #include <wx/filefn.h>
+#include <wx/filename.h>
+#include <wx/stdpaths.h>
+#include <wx/utils.h>
 #include <wx/webrequest.h>
 
 #include "dpop_key.h"
@@ -62,6 +65,23 @@ TicketRefresher::TicketRefresher(const wxString& apiBaseUrl,
 TicketRefresher::~TicketRefresher()
 {
 	Stop();
+}
+
+wxString TicketRefresher::DefaultTicketFilePath()
+{
+	// Mirror the game client's M_GetUserDir() so a launcher-written ticket is
+	// found when cl_authticket_file is left empty (see CL_DefaultTicketPath).
+#ifdef __WXMSW__
+	wxFileName fn(wxStandardPaths::Get().GetDocumentsDir(), wxEmptyString);
+	fn.AppendDir("My Games");
+	fn.AppendDir("Odamex");
+#else
+	wxFileName fn(wxGetHomeDir(), wxEmptyString);
+	fn.AppendDir(".odamex");
+#endif
+	fn.AppendDir("auth");
+	fn.SetFullName("authticket.jwt");
+	return fn.GetFullPath();
 }
 
 bool TicketRefresher::Start()
@@ -188,6 +208,13 @@ bool TicketRefresher::WriteTicketFile(const std::string& ticket)
 	// (which polls the file) never observes a half-written ticket. The file's
 	// per-user location and restrictive permissions are handled by the C8
 	// handoff that chooses m_ticketFilePath.
+
+	// Ensure the parent directory exists (e.g. .../Odamex/auth on first use);
+	// Mkdir with _MKDIR_FULL is a no-op when it already exists.
+	const wxString parentDir = wxFileName(m_ticketFilePath).GetPath();
+	if (!parentDir.empty() && !wxFileName::DirExists(parentDir))
+		wxFileName::Mkdir(parentDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL);
+
 	const wxString tmp = m_ticketFilePath + ".tmp";
 
 	{

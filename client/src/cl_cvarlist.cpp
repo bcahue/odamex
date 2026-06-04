@@ -281,8 +281,10 @@ CVAR(i_skipbootwin, "0", "Don't show the IWAD selector on boot.", CVARTYPE_BOOL,
 
 // [auth] Path to the game-ticket file the launcher writes and keeps fresh
 // (see shipping plan C8). On connect, the client reads the current ticket from
-// this file and presents it in the handshake. Empty = no ticket sent.
-CVAR(				cl_authticket_file, "", "Path to the launcher-written game ticket file",
+// this file and presents it in the handshake. Empty = use the well-known
+// launcher location (M_GetUserDir()/auth/authticket.jwt); set explicitly to
+// override. A missing file just means an anonymous connect.
+CVAR(				cl_authticket_file, "", "Path to the launcher-written game ticket file (empty = default launcher location)",
 					CVARTYPE_STRING, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
 
 CVAR(				cl_connectalert, "1", "Plays a sound when a player joins",
