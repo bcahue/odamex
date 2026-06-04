@@ -4267,7 +4267,11 @@ static void SV_CheckTicketExpiries()
 	lastCheck = now;
 
 	// Slack past exp before we act, to absorb clock skew and in-flight refreshes.
-	const int64_t grace = 45;
+	// Matches the API's ActiveSessionGraceSeconds (60s) and is sized with the
+	// refresh timing budget (see C7/C8): launcher 120s + 2x client 90s = 300s
+	// <= ticket lifetime 300s + this grace 60s, so one dropped client refresh
+	// is survivable.
+	const int64_t grace = 60;
 
 	for (Players::iterator it = players.begin(); it != players.end(); ++it)
 	{

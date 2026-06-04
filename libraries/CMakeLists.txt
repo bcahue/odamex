@@ -162,6 +162,8 @@ include(wolfssl-lib.cmake)
 
 include(jwt-cpp-lib.cmake)
 
+include(mongoose-lib.cmake)
+
 include(miniupnp-lib.cmake)
 
 include(protobuf-lib.cmake)

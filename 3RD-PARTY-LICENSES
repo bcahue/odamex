@@ -106,6 +106,23 @@ Public Domain "license" you can re-license your copy using whatever
 license you like.
 
 -----------------------------------------------------------------------------
+License of Mongoose
+-----------------------------------------------------------------------------
+
+The launcher (odalaunch) uses Mongoose (https://github.com/cesanta/mongoose)
+for its OIDC loopback callback listener.
+
+Copyright (c) 2004-2013 Sergey Lyubka
+Copyright (c) 2013-2025 Cesanta Software Limited
+All rights reserved.
+
+Mongoose is dual-licensed: it is distributed here under the terms of the GNU
+General Public License version 2, which is compatible with Odamex's own
+"GPL v2 or later" license. A separate commercial license is also available
+from Cesanta (https://www.mongoose.ws/licensing/). SPDX-License-Identifier:
+GPL-2.0-only OR commercial.
+
+-----------------------------------------------------------------------------
 License of textscreen
 -----------------------------------------------------------------------------
 

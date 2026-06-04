@@ -69,6 +69,19 @@
           <help>Chat with other players on Discord</help>
         </object>
       </object>
+      <object class="wxMenu" name="9">
+        <label>Account</label>
+        <object class="wxMenuItem" name="Id_MnuItmAccountLogin">
+          <label>Sign In...</label>
+          <accel></accel>
+          <help>Sign in to your Odamex account</help>
+        </object>
+        <object class="wxMenuItem" name="Id_MnuItmAccountLogout">
+          <label>Sign Out</label>
+          <accel></accel>
+          <help>Sign out of your Odamex account</help>
+        </object>
+      </object>
       <object class="wxMenu" name="4">
         <label>Help</label>
         <object class="wxMenuItem" name="Id_MnuItmVisitWebsite">
@@ -528,7 +541,7 @@
     </object>
     <object class="wxStatusBar" name="">
       <style>wxSTB_SIZEGRIP</style>
-      <fields>4</fields>
+      <fields>5</fields>
     </object>
   </object>
   <object class="wxDialog" name="dlgConfig">

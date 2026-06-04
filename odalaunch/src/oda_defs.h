@@ -114,6 +114,14 @@ inline constexpr const char* def_masterlist[] =
 // The default port number of a server if none was specified
 #define ODA_NETDEFSERVERPORT 10666
 
+// Authentication / account integration
+// -------------------------------------
+
+// Default Odamex API origin used for the launcher OIDC/DPoP login flow and
+// ticket issuance (shipping plan Phase C). Overridable via the AUTHAPIURL
+// config key. No trailing slash.
+#define ODA_AUTHAPIURL "https://api.odamex.net"
+
 // File system
 // -----------
 
@@ -146,6 +154,10 @@ inline constexpr const char* def_masterlist[] =
 #define ARTNEWLISTINTERVAL  "AutoRefreshTimerNewListInterval"
 #define QRYTHREADMULTIPLIER "QryThreadMultiplier"
 #define QRYTHREADMAXIMUM    "QryThreadMaximum"
+#define AUTHAPIURL          "AuthApiUrl"
+// Set when the user explicitly signs out, so the next sign-in forces a fresh
+// Keycloak credential prompt (cleared on the next successful sign-in).
+#define AUTHFORCELOGIN      "AuthForceLogin"
 
 // Master server ids, eg:
 // MasterServer1 "127.0.0.1:15000"

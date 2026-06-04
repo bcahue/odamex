@@ -113,6 +113,13 @@ bool		recv_full_update = false;
 
 std::string connectpasshash = "";
 
+// [auth] C8: wall-clock time of the last clc_authrefresh send. Armed at connect
+// so the first refresh fires one interval later (the initial ticket is already
+// presented in the connect handshake). The interval sits above the server's B9
+// throttle floor (~60s) and well inside the 300s ticket lifetime.
+static time_t cl_lastAuthRefresh = 0;
+static const int CL_AUTHREFRESH_INTERVAL = 90;
+
 bool      connected;
 netadr_t  serveraddr; // address of a server
 netadr_t  lastconaddr;
@@ -1765,6 +1772,11 @@ bool CL_Connect()
     multiplayer = true;
     network_game = true;
 	serverside = false;
+
+	// [auth] C8: arm the ticket-refresh throttle so the first clc_authrefresh
+	// goes out one interval from now (we just presented a fresh ticket on
+	// connect).
+	cl_lastAuthRefresh = time(NULL);
 	simulated_connection = netdemo.isPlaying();
 
 	byte flags = MSG_ReadByte();
@@ -2112,6 +2124,42 @@ extern int outrate;
 //
 // CL_SendCmd
 //
+//
+// CL_SendAuthRefresh
+//
+// [auth] C8: periodically resend the current game ticket to the server via
+// clc_authrefresh so it extends our authenticated session (B8/B9). The ticket
+// is re-read from the launcher-maintained file each time (the launcher rotates
+// it on its own cadence, C7). Self-throttled to once per CL_AUTHREFRESH_INTERVAL
+// so we stay above the server's B9 rate floor and never burst (a burst would
+// trip the server's anti-abuse counter). Sent unreliably in net_buffer; a lost
+// packet is covered by the next interval within the refresh timing budget.
+//
+static void CL_SendAuthRefresh()
+{
+	if (!connected || netdemo.isPlaying())
+		return;
+
+	const char* path = cl_authticket_file.cstring();
+	if (!path || !path[0])
+		return; // no launcher-managed ticket; nothing to refresh
+
+	time_t now = time(NULL);
+	if (now - cl_lastAuthRefresh < CL_AUTHREFRESH_INTERVAL)
+		return;
+
+	// Throttle regardless of outcome so a momentarily-empty file doesn't make us
+	// re-read it every tic.
+	cl_lastAuthRefresh = now;
+
+	std::string ticket = CL_ReadGameTicket();
+	if (ticket.empty())
+		return;
+
+	MSG_WriteMarker(&net_buffer, clc_authrefresh);
+	MSG_WriteString(&net_buffer, ticket.c_str());
+}
+
 void CL_SendCmd(void)
 {
 	player_t *p = &consoleplayer();
@@ -2121,6 +2169,9 @@ void CL_SendCmd(void)
 
 	if (!p->mo || gametic < 1 )
 		return;
+
+	// [auth] C8: piggyback the periodic ticket refresh on the outgoing packet.
+	CL_SendAuthRefresh();
 
 	// GhostlyDeath -- If we are spectating, tell the server of our new position
 	if (p->spectator)

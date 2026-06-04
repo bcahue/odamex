@@ -49,9 +49,14 @@
 
 #include <vector>
 #include <memory>
+#include <thread>
+#include <atomic>
 
 #include "query_thread.h"
 #include "net_packet.h"
+
+#include "launcher_session.h"
+#include "launcher_login.h"
 
 // custom event declarations
 wxDECLARE_EVENT(wxEVT_THREAD_MONITOR_SIGNAL, wxCommandEvent);
@@ -80,6 +85,14 @@ protected:
 	void OnOpenReportBug(wxCommandEvent& event);
 	void OnAbout(wxCommandEvent& event);
 	void OnOpenChat(wxCommandEvent& event);
+
+	// Account / authentication (shipping plan C10)
+	void OnAccountLogin(wxCommandEvent& event);
+	void OnAccountLogout(wxCommandEvent& event);
+	void OnLoginFlowDone(wxCommandEvent& event);
+	void StartLoginFlow();
+	void HandlePendingRegistration(wxString pendingToken);
+	void UpdateAccountStatus();
 
 	void OnTextSearch(wxCommandEvent& event);
 
@@ -266,6 +279,22 @@ protected:
 	void* Entry();
 
 	std::vector<std::unique_ptr<QueryThread>> threadVector;
+
+	// Account session state and the worker thread that runs the (blocking)
+	// browser login flow. Result is marshalled back to the UI thread via a
+	// wxEVT_LAUNCHER_LOGIN_DONE command event.
+	std::unique_ptr<LauncherSession> m_Session;
+	std::thread m_AuthThread;
+	bool m_AuthBusy;
+	// Shared with the login worker so shutdown (or a future cancel button) can
+	// abort the browser-callback wait instead of blocking the join for the full
+	// login timeout. shared_ptr so the worker keeps it alive past frame teardown.
+	std::shared_ptr<std::atomic<bool>> m_AuthCancel;
+	LauncherLoginResult m_PendingLoginResult;
+	// Modeless "complete sign-in in your browser / Cancel" window shown while a
+	// login is in flight. Gives the user a way to abort when there is no signal
+	// that they closed the browser. nullptr when no login is running.
+	wxDialog* m_AuthWaitDlg;
 
 private:
 

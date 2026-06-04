@@ -8,8 +8,8 @@ file(GLOB API_SOURCES ${API_DIR}/*.cpp ${API_DIR}/threads/*.cpp)
 
 # Odalaunch
 set(LAUNCH_DIR res src)
-file(GLOB LAUNCH_HEADERS res/*.h src/*.h)
-file(GLOB LAUNCH_SOURCES src/*.cpp)
+file(GLOB LAUNCH_HEADERS CONFIGURE_DEPENDS res/*.h src/*.h)
+file(GLOB LAUNCH_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 
 if(WIN32)
   configure_file(res/odalaunch.rc.in "${CMAKE_CURRENT_BINARY_DIR}/res/odalaunch.rc" @ONLY)
@@ -61,8 +61,15 @@ if(wxWidgets_FOUND)
 
   target_link_libraries(odalaunch ${wxWidgets_LIBRARIES})
 
+  # Mongoose for the OIDC loopback callback listener.
+  target_link_libraries(odalaunch mongoose)
+
   if(WIN32)
-    target_link_libraries(odalaunch ws2_32)
+    # ws2_32: sockets (mongoose). bcrypt/ncrypt: DPoP key (CNG/NCrypt, C3).
+    # advapi32: Credential Manager (C5) + registry. iphlpapi: NIC enumeration
+    # for HWID (C4). winhttp: SignalR party/chat hub WebSocket (Schannel TLS,
+    # C11) -- the wss leg to Azure SignalR Service.
+    target_link_libraries(odalaunch ws2_32 bcrypt ncrypt advapi32 iphlpapi winhttp)
   endif()
 
   odalaunch_copy_libs(odalaunch)

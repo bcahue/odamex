@@ -75,6 +75,15 @@
 
 #include "md5.h"
 
+#include <wx/textdlg.h>
+#include <wx/dialog.h>
+#include <wx/button.h>
+#include <wx/stattext.h>
+#include <wx/sizer.h>
+
+#include "launcher_registration.h"
+#include "hwid.h"
+
 using namespace odalpapi;
 
 extern int NUM_THREADS;
@@ -92,6 +101,10 @@ static wxInt32 Id_MnuItmGetList = XRCID("Id_MnuItmGetList");
 // custom events
 wxDEFINE_EVENT(wxEVT_THREAD_MONITOR_SIGNAL, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_THREAD_WORKER_SIGNAL, wxCommandEvent);
+
+// Posted by the login worker thread when the (blocking) browser flow finishes;
+// handled on the UI thread by OnLoginFlowDone.
+wxDEFINE_EVENT(wxEVT_LAUNCHER_LOGIN_DONE, wxCommandEvent);
 
 // Event handlers
 BEGIN_EVENT_TABLE(dlgMain, wxFrame)
@@ -125,6 +138,11 @@ BEGIN_EVENT_TABLE(dlgMain, wxFrame)
 	EVT_MENU(wxID_ABOUT, dlgMain::OnAbout)
 	EVT_MENU(XRCID("Id_MnuItmOpenChat"), dlgMain::OnOpenChat)
 
+	// account / authentication
+	EVT_MENU(XRCID("Id_MnuItmAccountLogin"), dlgMain::OnAccountLogin)
+	EVT_MENU(XRCID("Id_MnuItmAccountLogout"), dlgMain::OnAccountLogout)
+	EVT_COMMAND(-1, wxEVT_LAUNCHER_LOGIN_DONE, dlgMain::OnLoginFlowDone)
+
 	EVT_MENU(XRCID("Id_MnuItmServerFilter"), dlgMain::OnShowServerFilter)
 	EVT_TEXT(XRCID("Id_SrchCtrlGlobal"), dlgMain::OnTextSearch)
 
@@ -153,6 +171,10 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 
 	// Allows us to auto-refresh the list due to the client not being run
 	m_ClientIsRunning = false;
+
+	// Account session (shipping plan C10)
+	m_AuthBusy = false;
+	m_AuthWaitDlg = nullptr;
 
 	// Loads the frame from the xml resource file
 	wxXmlResource::Get()->LoadFrame(this, parent, "dlgMain");
@@ -304,11 +326,23 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 		m_TimerNewList->Start(m_NewListInterval);
 		m_TimerRefresh->Start(m_RefreshInterval);
 	}
+
+	// Restore a persisted account session (C10). The DPoP key is loaded lazily
+	// at login time; here we only need to know whether a stored session token is
+	// still valid so the UI can show "signed in as X" immediately.
+	m_Session.reset(new LauncherSession());
+	m_Session->Restore();
+	UpdateAccountStatus();
 }
 
 // Window Destructor
 dlgMain::~dlgMain()
 {
+	// The login worker only ever blocks on the browser flow / sync HTTP; it
+	// posts its result and returns. Join it so we don't tear down under it.
+	if(m_AuthThread.joinable())
+		m_AuthThread.join();
+
 	delete[] QServer;
 
 	QServer = nullptr;
@@ -353,6 +387,15 @@ void dlgMain::OnWindowCreate(wxWindowCreateEvent& event)
 // Called when the window X button or Close(); function is called
 void dlgMain::OnClose(wxCloseEvent& event)
 {
+	// Cancel and reap any in-flight login worker first. Without this, a login
+	// parked waiting for the browser callback would block the join (in the
+	// destructor) for the full login timeout, making the window appear frozen
+	// when the user clicks Exit mid-login.
+	if(m_AuthCancel)
+		m_AuthCancel->store(true);
+	if(m_AuthThread.joinable())
+		m_AuthThread.join();
+
     // Stop any running timers and free their memory
     delete m_TimerNewList;
     m_TimerNewList = nullptr;
@@ -1597,5 +1640,294 @@ void dlgMain::OnOpenReportBug(wxCommandEvent& event)
 void dlgMain::OnOpenChat(wxCommandEvent& event)
 {
 	wxLaunchDefaultBrowser("https://discord.gg/bvvMJMS");
+}
+
+//
+// Account / authentication (shipping plan C10)
+//
+// The UI surface for the Phase C auth stack: a Sign In / Sign Out pair in the
+// Account menu and a "Signed in as X" status-bar field. The blocking browser
+// login flow (LauncherLogin) runs on a detached worker; its result is posted
+// back to this thread via wxEVT_LAUNCHER_LOGIN_DONE. First-time accounts come
+// back as PendingRegistration and are finished with a username picker.
+//
+
+// Refresh the account status-bar field (index 4) and the enabled state of the
+// Sign In / Sign Out menu items to match the current session.
+void dlgMain::UpdateAccountStatus()
+{
+	wxMenuBar* bar = GetMenuBar();
+	const bool signedIn = m_Session && m_Session->IsSignedIn();
+
+	if(m_StatusBar)
+	{
+		if(m_AuthBusy)
+			m_StatusBar->SetStatusText("Signing in...", 4);
+		else if(signedIn)
+			m_StatusBar->SetStatusText("Signed in as " + m_Session->Username(), 4);
+		else
+			m_StatusBar->SetStatusText("Not signed in", 4);
+	}
+
+	if(bar)
+	{
+		// While a login is in flight, neither action should be invokable.
+		bar->Enable(XRCID("Id_MnuItmAccountLogin"), !m_AuthBusy && !signedIn);
+		bar->Enable(XRCID("Id_MnuItmAccountLogout"), !m_AuthBusy && signedIn);
+	}
+}
+
+void dlgMain::OnAccountLogin(wxCommandEvent& WXUNUSED(event))
+{
+	if(m_AuthBusy || !m_Session || m_Session->IsSignedIn())
+		return;
+
+	StartLoginFlow();
+}
+
+void dlgMain::OnAccountLogout(wxCommandEvent& WXUNUSED(event))
+{
+	if(m_AuthBusy || !m_Session || !m_Session->IsSignedIn())
+		return;
+
+	m_Session->SignOut();
+	UpdateAccountStatus();
+}
+
+// Kick off the browser login flow on a worker thread. The DPoP key and HWID are
+// gathered up-front on the UI thread (cheap, and they need no event loop); the
+// blocking part -- the round-trip through the system browser and loopback -- is
+// what goes off-thread.
+void dlgMain::StartLoginFlow()
+{
+	// Make sure a previous (already-finished) worker is reaped before reuse.
+	if(m_AuthThread.joinable())
+		m_AuthThread.join();
+
+	if(!m_Session->EnsureKey())
+	{
+		wxMessageBox("Could not initialise secure key storage on this system, "
+		             "so signing in is unavailable.",
+		             "Sign in failed", wxOK | wxICON_ERROR, this);
+		return;
+	}
+
+	const wxString apiBase = m_Session->ApiBaseUrl();
+	const wxString jwk = wxString::FromUTF8(m_Session->Key().PublicJwkJson());
+	const wxString hwid = wxString::FromUTF8(Hwid::CollectPayloadJson());
+	const bool forceLogin = m_Session->ForceLogin();
+
+	m_AuthBusy = true;
+	m_AuthCancel = std::make_shared<std::atomic<bool>>(false);
+	UpdateAccountStatus();
+
+	// A small modeless window with a Cancel button. Because closing the system
+	// browser gives us no signal, this is the user's way to abort a sign-in they
+	// no longer want to finish (it just flips the shared cancel flag, which wakes
+	// the worker's callback wait).
+	m_AuthWaitDlg = new wxDialog(this, wxID_ANY, "Signing in",
+	                             wxDefaultPosition, wxDefaultSize,
+	                             wxCAPTION | wxCLOSE_BOX);
+	{
+		wxBoxSizer* outer = new wxBoxSizer(wxVERTICAL);
+		outer->Add(new wxStaticText(
+		               m_AuthWaitDlg, wxID_ANY,
+		               "Finish signing in using the web browser window that just "
+		               "opened.\n\nYou can return here and Cancel if you change "
+		               "your mind."),
+		           0, wxALL, 16);
+		wxButton* cancelBtn =
+		    new wxButton(m_AuthWaitDlg, wxID_CANCEL, "Cancel");
+		outer->Add(cancelBtn, 0, wxALIGN_CENTER | wxLEFT | wxRIGHT | wxBOTTOM, 16);
+		m_AuthWaitDlg->SetSizerAndFit(outer);
+		m_AuthWaitDlg->CentreOnParent();
+	}
+
+	// Cancel button and the window's [X] both just request cancellation; the
+	// window is torn down centrally in OnLoginFlowDone once the worker unwinds.
+	m_AuthWaitDlg->Bind(
+	    wxEVT_BUTTON,
+	    [this](wxCommandEvent&) {
+		    if(m_AuthCancel)
+			    m_AuthCancel->store(true);
+	    },
+	    wxID_CANCEL);
+	m_AuthWaitDlg->Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) {
+		if(m_AuthCancel)
+			m_AuthCancel->store(true);
+		// Do not destroy here; OnLoginFlowDone owns teardown.
+	});
+	m_AuthWaitDlg->Show();
+
+	// The worker holds its own shared_ptr copy of the cancel flag so it stays
+	// valid even if the frame is torn down while the login is still in flight.
+	std::shared_ptr<std::atomic<bool>> cancel = m_AuthCancel;
+	m_AuthThread = std::thread([this, apiBase, jwk, hwid, forceLogin, cancel]() {
+		LauncherLogin login(apiBase);
+		login.SetDpopPublicJwk(jwk);
+		login.SetHwidPayload(hwid);
+		login.SetForceLogin(forceLogin);
+		login.SetCancelFlag(cancel.get());
+		LauncherLoginResult result = login.Run();
+
+		// Always post the result back. If the launcher is shutting down, OnClose
+		// has already cancelled+joined us and Destroy() discards this pending
+		// event, so it can't reach a dead frame. On a user cancel, the posted
+		// event is exactly what lets OnLoginFlowDone tidy up the wait window.
+		m_PendingLoginResult = result;
+		wxCommandEvent done(wxEVT_LAUNCHER_LOGIN_DONE);
+		wxPostEvent(this, done);
+	});
+}
+
+void dlgMain::OnLoginFlowDone(wxCommandEvent& WXUNUSED(event))
+{
+	m_AuthBusy = false;
+
+	// Reap the worker (it has already posted and returned) and tear down the
+	// "signing in" window now that the flow has resolved one way or another.
+	if(m_AuthThread.joinable())
+		m_AuthThread.join();
+	if(m_AuthWaitDlg)
+	{
+		m_AuthWaitDlg->Destroy();
+		m_AuthWaitDlg = nullptr;
+	}
+
+	const LauncherLoginResult& r = m_PendingLoginResult;
+
+	// A user-initiated cancel comes back as Failed/"cancelled" -- just return to
+	// the signed-out state quietly, with no error popup.
+	if(r.status == LauncherLoginResult::Status::Failed && r.error == "cancelled")
+	{
+		UpdateAccountStatus();
+		return;
+	}
+
+	switch(r.status)
+	{
+	case LauncherLoginResult::Status::Success:
+		m_Session->AdoptSession(r.sessionToken, wxEmptyString);
+		UpdateAccountStatus();
+		break;
+
+	case LauncherLoginResult::Status::PendingRegistration:
+		UpdateAccountStatus();
+		HandlePendingRegistration(r.pendingToken);
+		break;
+
+	case LauncherLoginResult::Status::Error:
+	{
+		wxString msg = "Sign in was rejected.";
+		if(!r.error.IsEmpty())
+			msg += "\n\n" + r.error;
+		if(!r.reference.IsEmpty())
+			msg += "\n\nReference: " + r.reference;
+		wxMessageBox(msg, "Sign in failed", wxOK | wxICON_ERROR, this);
+		UpdateAccountStatus();
+		break;
+	}
+
+	case LauncherLoginResult::Status::Failed:
+	default:
+	{
+		wxString msg = "Could not complete sign in. Please check your "
+		               "connection and try again.";
+		// Surface the diagnostic detail (e.g. "start_http_400 sent=... resp=...")
+		// so first-integration faults are visible instead of swallowed.
+		if(!r.error.IsEmpty())
+			msg += "\n\nDetails: " + r.error;
+		wxMessageBox(msg, "Sign in failed", wxOK | wxICON_ERROR, this);
+		UpdateAccountStatus();
+		break;
+	}
+	}
+}
+
+// First-time accounts must pick a username before they get a session token.
+// Loops a text-entry dialog against the API's availability check and commit
+// endpoints (C2b). These calls are synchronous but quick; a busy cursor covers
+// the brief pause. The pending token rotates on each "taken" rejection.
+void dlgMain::HandlePendingRegistration(wxString pendingToken)
+{
+	const wxString apiBase = m_Session->ApiBaseUrl();
+
+	for(;;)
+	{
+		wxTextEntryDialog dlg(this,
+		                      "Welcome! Pick a username to finish setting up "
+		                      "your account.",
+		                      "Choose a username", wxEmptyString);
+
+		if(dlg.ShowModal() != wxID_OK)
+		{
+			// User cancelled: stay signed out. The pending token simply lapses.
+			UpdateAccountStatus();
+			return;
+		}
+
+		const wxString username = dlg.GetValue().Trim().Trim(false);
+		if(username.IsEmpty())
+			continue;
+
+		wxBusyCursor busy;
+
+		// Cheap pre-check for friendlier feedback before the real commit.
+		LauncherRegistration::UsernameAvailability avail =
+		    LauncherRegistration::CheckUsername(apiBase, username);
+		if(avail.status == LauncherRegistration::UsernameAvailability::Status::Taken)
+		{
+			wxMessageBox("That username is already taken. Please choose another.",
+			             "Username unavailable", wxOK | wxICON_INFORMATION, this);
+			continue;
+		}
+		if(avail.status ==
+		   LauncherRegistration::UsernameAvailability::Status::Invalid)
+		{
+			wxMessageBox("That username isn't allowed. Use letters, numbers and "
+			             "common punctuation.",
+			             "Invalid username", wxOK | wxICON_INFORMATION, this);
+			continue;
+		}
+
+		// Commit. This is authoritative -- the pre-check can race.
+		LauncherRegistration::RegistrationResult res =
+		    LauncherRegistration::Complete(apiBase, pendingToken, username);
+
+		switch(res.status)
+		{
+		case LauncherRegistration::RegistrationResult::Status::Success:
+			m_Session->AdoptSession(res.sessionToken, res.username);
+			UpdateAccountStatus();
+			return;
+
+		case LauncherRegistration::RegistrationResult::Status::UsernameTaken:
+			// The API consumed our pending token and minted a fresh one; loop
+			// with it.
+			pendingToken = res.newPendingToken;
+			wxMessageBox("That username was just taken. Please choose another.",
+			             "Username unavailable", wxOK | wxICON_INFORMATION, this);
+			continue;
+
+		case LauncherRegistration::RegistrationResult::Status::InvalidUsername:
+			wxMessageBox("That username isn't allowed. Please choose another.",
+			             "Invalid username", wxOK | wxICON_INFORMATION, this);
+			continue;
+
+		case LauncherRegistration::RegistrationResult::Status::Expired:
+			wxMessageBox("This sign-in attempt expired. Please sign in again.",
+			             "Sign in expired", wxOK | wxICON_ERROR, this);
+			UpdateAccountStatus();
+			return;
+
+		case LauncherRegistration::RegistrationResult::Status::Failed:
+		default:
+			wxMessageBox("Could not finish setting up your account. Please try "
+			             "again.",
+			             "Registration failed", wxOK | wxICON_ERROR, this);
+			UpdateAccountStatus();
+			return;
+		}
+	}
 }
 
