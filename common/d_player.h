@@ -313,6 +313,7 @@ public:
 		// sv_auth_enabled is off or the client connected without a ticket.
 		std::string	auth_sub;		// Keycloak subject ID from the verified ticket
 		std::string	auth_jti;		// unique ticket ID presented at connect (replay tracking, B4)
+		std::string	auth_name;		// Odamex username from the ticket; pins the in-game name (empty = unauthenticated / no username)
 		int64_t		auth_exp;		// ticket expiry (unix seconds); 0 when unauthenticated
 
 		// [auth] Refresh anti-abuse state (B9). Throttles the clc_authrefresh
@@ -358,6 +359,7 @@ public:
 			displaydisconnect = true;
 			auth_sub = "";
 			auth_jti = "";
+			auth_name = "";
 			auth_exp = 0;
 			auth_last_refresh = 0;
 			auth_refresh_abuse = 0;
@@ -383,6 +385,7 @@ public:
 			displaydisconnect(true),
 			auth_sub(other.auth_sub),
 			auth_jti(other.auth_jti),
+			auth_name(other.auth_name),
 			auth_exp(other.auth_exp),
 			auth_last_refresh(other.auth_last_refresh),
 			auth_refresh_abuse(other.auth_refresh_abuse),
@@ -418,6 +421,7 @@ public:
 			displaydisconnect = true;
 			auth_sub = other.auth_sub;
 			auth_jti = other.auth_jti;
+			auth_name = other.auth_name;
 			auth_exp = other.auth_exp;
 			auth_last_refresh = other.auth_last_refresh;
 			auth_refresh_abuse = other.auth_refresh_abuse;

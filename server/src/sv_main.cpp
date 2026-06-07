@@ -840,6 +840,25 @@ bool SV_SetupUserInfo(player_t &player)
 	if (new_netname.length() > MAXPLAYERNAME)
 		new_netname.erase(MAXPLAYERNAME);
 
+	// Authenticated sessions: the in-game name is pinned to the account's
+	// username and cannot be changed. Ignore whatever the client sent and
+	// substitute the locked name -- but keep parsing the rest of the userinfo
+	// below so the message stream stays aligned and other prefs still apply.
+	if (!player.client.auth_sub.empty() && !player.client.auth_name.empty())
+	{
+		std::string requested(new_netname);
+		new_netname = player.client.auth_name;
+
+		// Tell the player their change was refused. Skip the initial connect
+		// sync (old_netname empty) and no-op re-sends (requested == locked name).
+		if (!old_netname.empty() && !iequals(requested, player.client.auth_name))
+		{
+			MSG_WriteSVC(&player.client.reliablebuf,
+			             SVC_Print(PRINT_HIGH,
+			                       "Name changes are disabled in authenticated games.\n"));
+		}
+	}
+
 	if (!ValidString(new_netname))
 	{
 		SV_InvalidateClient(player, "Name contains invalid characters");
@@ -1933,9 +1952,25 @@ void SV_ConnectClient()
 		// event posts (B5) and expiry enforcement (B8).
 		cl->auth_sub = auth.sub;
 		cl->auth_jti = auth.jti;
+		cl->auth_name = auth.username;
 		cl->auth_exp = auth.expiresAt;
 		cl->auth_last_refresh = static_cast<int64_t>(time(NULL));
 		cl->auth_refresh_abuse = 0;
+
+		// Pin the in-game name to the authenticated username. SV_SetupUserInfo
+		// then refuses client-driven name changes while auth_sub is set, so the
+		// displayed name always matches the account. (The initial userinfo was
+		// parsed at SV_SetupUserInfo above, before auth ran -- override it now.)
+		if (!auth.username.empty())
+		{
+			std::string forced(auth.username);
+			StripColorCodes(forced);
+			forced = TrimString(forced);
+			if (forced.length() > MAXPLAYERNAME)
+				forced.erase(MAXPLAYERNAME);
+			if (!forced.empty())
+				player->userinfo.netname = forced;
+		}
 
 		PrintFmt("{} authenticated as {} (jti {}).\n", NET_AdrToString(net_from),
 		         auth.sub, auth.jti);

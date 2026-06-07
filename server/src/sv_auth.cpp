@@ -362,6 +362,14 @@ TicketResult SV_AuthVerifyTicket(const std::string& token)
 	auto exp = decoded.get_expires_at();
 	result.expiresAt = std::chrono::system_clock::to_time_t(exp);
 
+	if (decoded.has_payload_claim("preferred_username")) {
+		try {
+			result.username = decoded.get_payload_claim("preferred_username").as_string();
+		} catch (const std::exception&) {
+			// Malformed claim — ignore and fall back to the client-sent name.
+		}
+	}
+
 	result.valid = true;
 	return result;
 }

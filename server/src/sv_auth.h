@@ -33,6 +33,7 @@ struct TicketResult
 	std::string jti;       // Unique ticket ID (for replay tracking by caller)
 	int srv;               // Target server ID from the ticket
 	int64_t expiresAt;     // Unix timestamp when ticket expires
+	std::string username;  // Player's Odamex username (preferred_username claim)
 	std::string reason;    // Human-readable failure reason (empty on success)
 };
 
