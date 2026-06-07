@@ -1928,7 +1928,7 @@ void dlgMain::OnLoginFlowDone(wxCommandEvent& WXUNUSED(event))
 		wxString msg;
 		if(r.error == "banned")
 		{
-			msg = "You are banned from authenticated play.";
+			msg = "You are banned from official Odamex servers.";
 			if(!r.reason.IsEmpty())
 				msg += "\n\nReason: " + r.reason;
 		}
