@@ -57,10 +57,24 @@ class TicketRefresher
 	// the game's portable-vs-installed write dir, which the launcher can't see.
 	static wxString DefaultTicketFilePath();
 
+	// Detail about the most recent failed mint, so the UI can show a useful
+	// message (notably a ban reason). Populated on every FetchAndWriteOnce
+	// failure; meaningful to read right after a Start() that returned false.
+	struct FailureInfo
+	{
+		bool banned = false;   // server returned 403 banned
+		wxString reason;       // human-readable ban reason (may be empty)
+		wxString reference;    // support reference id (may be empty)
+	};
+
 	// Mint one ticket synchronously (so the game has a ticket to present on its
 	// initial connect), then start the background refresh loop. Returns false if
 	// that first mint fails.
 	bool Start();
+
+	// Details of the last failed mint. Valid after Start() returns false (the
+	// background loop is not running in that case, so this read is race-free).
+	const FailureInfo& LastFailure() const { return m_lastFailure; }
 
 	// Signal the loop to stop and join the thread. Idempotent; also called by
 	// the destructor.
@@ -86,4 +100,5 @@ class TicketRefresher
 	std::condition_variable m_cv;
 	bool m_stop = false;
 	std::atomic<bool> m_hasTicket{false};
+	FailureInfo m_lastFailure;
 };

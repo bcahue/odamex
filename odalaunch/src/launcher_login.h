@@ -45,6 +45,7 @@ struct LauncherLoginResult
 	wxString pendingToken; // Status::PendingRegistration
 	wxString error;        // Status::Error / Failed: machine code or message
 	wxString reference;    // Status::Error: support reference id (e.g. ban ref)
+	wxString reason;       // Status::Error: human-readable reason (e.g. ban reason)
 };
 
 // Orchestrates a single login attempt. Construct, optionally supply the DPoP

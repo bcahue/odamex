@@ -25,6 +25,7 @@
 #include "ticket_refresher.h"
 
 #include <chrono>
+#include <cstring>
 #include <string>
 
 #include <wx/file.h>
@@ -137,6 +138,8 @@ void TicketRefresher::Loop()
 
 bool TicketRefresher::FetchAndWriteOnce()
 {
+	m_lastFailure = FailureInfo{}; // reset; repopulated below on failure
+
 	const wxString url = m_apiBaseUrl + kTicketPath;
 	const std::string urlUtf8 = url.utf8_string();
 
@@ -182,6 +185,28 @@ bool TicketRefresher::FetchAndWriteOnce()
 	if (response.GetStatus() != 200)
 	{
 		// 403 = banned, 404 = server inactive, 401 = session/DPoP rejected.
+		// On a ban, the body is a ProblemDetails carrying error/reason/referenceId
+		// extensions — capture them so the UI can show why.
+		if (response.GetStatus() == 403)
+		{
+			const std::string errBody = response.AsString().utf8_string();
+			struct mg_str ej = mg_str_n(errBody.data(), errBody.size());
+
+			char* err = mg_json_get_str(ej, "$.error");
+			char* reason = mg_json_get_str(ej, "$.reason");
+			char* reference = mg_json_get_str(ej, "$.referenceId");
+
+			m_lastFailure.banned = (err != nullptr && std::strcmp(err, "banned") == 0);
+			if (reason != nullptr)
+				m_lastFailure.reason = wxString::FromUTF8(reason);
+			if (reference != nullptr)
+				m_lastFailure.reference = wxString::FromUTF8(reference);
+
+			mg_free(err);
+			mg_free(reason);
+			mg_free(reference);
+		}
+
 		m_hasTicket.store(false);
 		return false;
 	}

@@ -201,6 +201,9 @@ LauncherLoginResult LauncherLogin::Run(int timeoutSeconds)
 		auto refIt = params.find("ref");
 		if (refIt != params.end())
 			out.reference = wxString::FromUTF8(refIt->second);
+		auto reasonIt = params.find("reason");
+		if (reasonIt != params.end())
+			out.reason = wxString::FromUTF8(reasonIt->second);
 	}
 	else
 	{

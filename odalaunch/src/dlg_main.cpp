@@ -1536,12 +1536,30 @@ void dlgMain::StartTicketRefresher(int serverId)
 	// game connects -- a brief network round-trip, hence the busy cursor.
 	wxBusyCursor busy;
 	if(refresher->Start())
+	{
 		m_TicketRefresher = std::move(refresher);
+	}
 	else
-		wxMessageBox("Could not obtain a game ticket for this server.\n\n"
-		             "You may need to sign in again. Connecting without "
-		             "authentication; the server may refuse the connection.",
-		             "Authentication", wxOK | wxICON_WARNING, this);
+	{
+		const TicketRefresher::FailureInfo& fail = refresher->LastFailure();
+		if(fail.banned)
+		{
+			// The API refused to issue a ticket because the player is banned.
+			wxString msg = "You are banned from official Odamex servers.";
+			if(!fail.reason.IsEmpty())
+				msg += "\n\nReason: " + fail.reason;
+			if(!fail.reference.IsEmpty())
+				msg += "\n\nReference: " + fail.reference;
+			wxMessageBox(msg, "Banned", wxOK | wxICON_ERROR, this);
+		}
+		else
+		{
+			wxMessageBox("Could not obtain a game ticket for this server.\n\n"
+			             "You may need to sign in again. Connecting without "
+			             "authentication; the server may refuse the connection.",
+			             "Authentication", wxOK | wxICON_WARNING, this);
+		}
+	}
 }
 
 void dlgMain::LaunchGame(const wxString& Address, const wxString& ODX_Path,
@@ -1905,9 +1923,23 @@ void dlgMain::OnLoginFlowDone(wxCommandEvent& WXUNUSED(event))
 
 	case LauncherLoginResult::Status::Error:
 	{
-		wxString msg = "Sign in was rejected.";
-		if(!r.error.IsEmpty())
-			msg += "\n\n" + r.error;
+		// "banned" is the one error the API surfaces with a human-readable
+		// reason; show a friendlier message and quote the reason + reference.
+		wxString msg;
+		if(r.error == "banned")
+		{
+			msg = "You are banned from authenticated play.";
+			if(!r.reason.IsEmpty())
+				msg += "\n\nReason: " + r.reason;
+		}
+		else
+		{
+			msg = "Sign in was rejected.";
+			if(!r.error.IsEmpty())
+				msg += "\n\n" + r.error;
+			if(!r.reason.IsEmpty())
+				msg += "\n\nReason: " + r.reason;
+		}
 		if(!r.reference.IsEmpty())
 			msg += "\n\nReference: " + r.reference;
 		wxMessageBox(msg, "Sign in failed", wxOK | wxICON_ERROR, this);
