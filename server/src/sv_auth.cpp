@@ -191,6 +191,9 @@ void SV_AuthInit()
 	if (sv_auth_server_id.asInt() == 0)
 		I_FatalError("SV_Auth: sv_auth_server_id must be set when sv_auth_enabled is true");
 
+	if (wolfSSL_Init() != WOLFSSL_SUCCESS)
+		I_FatalError("SV_Auth: wolfSSL_Init() failed");
+
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
 	if (!FetchJWKS())

@@ -3911,6 +3911,11 @@ static void SV_AuthRefresh(player_t& player)
 	if (!sv_auth_enabled || cl.auth_sub.empty())
 		return;
 
+	// Debug trace (only with `developer` set) so we can confirm the launcher is
+	// actually sending reauth refreshes and see how each one is handled.
+	DPrintFmt("SV_Auth: reauth refresh received from {} (sub {}, {} bytes).\n",
+	          NET_AdrToString(net_from), cl.auth_sub, ticket.size());
+
 	const size_t MAX_TICKET_BYTES = 4096; // a real ES256 game ticket is well under this
 	const int64_t REFRESH_FLOOR = 60;     // min seconds between processed refreshes
 	const int REFRESH_ABUSE_LIMIT = 30;   // consecutive too-fast attempts before a kick
@@ -3919,6 +3924,8 @@ static void SV_AuthRefresh(player_t& player)
 	// as a parse-cost / amplification vector. Oversized is never legitimate.
 	if (ticket.size() > MAX_TICKET_BYTES)
 	{
+		DPrintFmt("SV_Auth: reauth rejected (oversized ticket, {} bytes) from {}.\n",
+		          ticket.size(), cl.auth_sub);
 		if (++cl.auth_refresh_abuse > REFRESH_ABUSE_LIMIT)
 			SV_KickPlayer(player, "auth refresh flooding");
 		return;
@@ -3931,6 +3938,8 @@ static void SV_AuthRefresh(player_t& player)
 	// flooding gets the client kicked.
 	if (now - cl.auth_last_refresh < REFRESH_FLOOR)
 	{
+		DPrintFmt("SV_Auth: reauth throttled ({}s < {}s floor) from {}.\n",
+		          now - cl.auth_last_refresh, REFRESH_FLOOR, cl.auth_sub);
 		if (++cl.auth_refresh_abuse > REFRESH_ABUSE_LIMIT)
 			SV_KickPlayer(player, "auth refresh flooding");
 		return;
@@ -3944,17 +3953,36 @@ static void SV_AuthRefresh(player_t& player)
 
 	TicketResult res = SV_AuthVerifyTicket(ticket);
 	if (!res.valid)
+	{
+		PrintFmt("SV_Auth: reauth ticket rejected ({}) for {}.\n", res.reason,
+		          cl.auth_sub);
 		return; // ignore; B8 will reap them when the old ticket lapses
+	}
 
 	// Bind the refresh to the identity that connected: a valid ticket minted for
 	// a different subject must never hijack this player's session.
 	if (res.sub != cl.auth_sub)
+	{
+		DPrintFmt(
+		    "SV_Auth: reauth subject mismatch (ticket {} != session {}); ignored.\n",
+		          res.sub, cl.auth_sub);
 		return;
+	}
 
 	// Extend (never shorten) the session. exp only moves forward as the API
 	// mints fresh, longer-lived tickets.
 	if (res.expiresAt > cl.auth_exp)
+	{
+		DPrintFmt("SV_Auth: reauth accepted for {} (jti {}); exp {} -> {}.\n",
+		          cl.auth_sub, res.jti, cl.auth_exp, res.expiresAt);
 		cl.auth_exp = res.expiresAt;
+	}
+	else
+	{
+		DPrintFmt("SV_Auth: reauth accepted for {} but exp not advanced "
+		          "(ticket exp {} <= session exp {}).\n",
+		          cl.auth_sub, res.expiresAt, cl.auth_exp);
+	}
 }
 
 //

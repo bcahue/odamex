@@ -1629,7 +1629,21 @@ void dlgMain::LaunchGame(const wxString& Address, const wxString& ODX_Path,
 	m_ClientIsRunning = true;
 
 	if(wxExecute(CmdLine, wxEXEC_ASYNC, m_Process) <= 0)
+	{
 		wxMessageBox(wxString::Format(MsgStr, BinName.c_str()));
+
+		// The game never started, so OnProcessTerminate will never fire to stop
+		// the refresher we may have spun up above. Stop it here, otherwise it
+		// would keep requesting tickets indefinitely with no game to use them.
+		m_ClientIsRunning = false;
+		if(m_TicketRefresher)
+		{
+			m_TicketRefresher->Stop();
+			m_TicketRefresher.reset();
+		}
+		delete m_Process;
+		m_Process = nullptr;
+	}
 }
 
 
