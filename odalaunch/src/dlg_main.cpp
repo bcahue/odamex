@@ -1899,6 +1899,10 @@ void dlgMain::OnLoginFlowDone(wxCommandEvent& WXUNUSED(event))
 		m_AuthWaitDlg = nullptr;
 	}
 
+	// The user has been off authenticating in their browser; now that the
+	// callback has resolved, pull the launcher back in front of the browser.
+	BringToForeground();
+
 	const LauncherLoginResult& r = m_PendingLoginResult;
 
 	// A user-initiated cancel comes back as Failed/"cancelled" -- just return to
@@ -1961,6 +1965,19 @@ void dlgMain::OnLoginFlowDone(wxCommandEvent& WXUNUSED(event))
 		break;
 	}
 	}
+}
+
+void dlgMain::BringToForeground()
+{
+	// Restore if the user minimized us while authenticating, then raise. On
+	// platforms that forbid a background process from stealing focus (notably
+	// Windows), Raise() falls back to flashing the taskbar; RequestUserAttention
+	// makes that explicit so the launcher is at least noticeable.
+	if(IsIconized())
+		Iconize(false);
+
+	Raise();
+	RequestUserAttention(wxUSER_ATTENTION_INFO);
 }
 
 // First-time accounts must pick a username before they get a session token.

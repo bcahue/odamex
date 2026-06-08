@@ -101,6 +101,7 @@ protected:
 	void OnLoginFlowDone(wxCommandEvent& event);
 	void StartLoginFlow();
 	void HandlePendingRegistration(wxString pendingToken);
+	void BringToForeground();
 	void UpdateAccountStatus();
 
 	void OnTextSearch(wxCommandEvent& event);
