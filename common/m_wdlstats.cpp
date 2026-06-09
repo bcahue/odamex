@@ -82,6 +82,8 @@ struct WDLPlayer
 	int pid;
 	std::string netname;
 	team_t team;
+	// [auth] OAuth sub (empty string if unauthenticated/bot)
+	std::string sub;
 };
 
 // WDL Players that we're keeping track of.
@@ -189,6 +191,7 @@ static void AddWDLPlayer(const player_t& player)
 	    player.id,
 	    player.userinfo.netname,
 	    player.userinfo.team,
+	    player.client.auth_sub,
 	};
 	::wdlplayers.push_back(wdlplayer);
 }
