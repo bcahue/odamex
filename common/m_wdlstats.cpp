@@ -75,30 +75,13 @@ static struct WDLState
 	bool enablebeacons;
 } wdlstate;
 
-// A single tracked player
-struct WDLPlayer
-{
-	int id;
-	int pid;
-	std::string netname;
-	team_t team;
-	// [auth] OAuth sub (empty string if unauthenticated/bot)
-	std::string sub;
-};
+// The recording-table record shapes (WDLPlayer/WDLPlayerSpawn/WDLItemSpawn/
+// WDLFlagLocation/WDLEvent) and their typedefs now live in m_wdlstats.h so the
+// v6 aggregation module can consume them directly. Only the recorder-owned
+// singleton instances and their helpers live here.
 
 // WDL Players that we're keeping track of.
-typedef std::vector<WDLPlayer> WDLPlayers;
 static WDLPlayers wdlplayers;
-
-// A single tracked spawn
-struct WDLPlayerSpawn
-{
-	int id;
-	int x;
-	int y;
-	int z;
-	team_t team;
-};
 
 [[nodiscard]]
 bool operator==(const WDLPlayerSpawn& lhs, const WDLPlayerSpawn& rhs)
@@ -108,50 +91,13 @@ bool operator==(const WDLPlayerSpawn& lhs, const WDLPlayerSpawn& rhs)
 }
 
 // WDL player spawns that we're keeping track of.
-typedef std::vector<WDLPlayerSpawn> WDLPlayerSpawns;
 static WDLPlayerSpawns wdlplayerspawns;
 
-// A single tracked item spawn
-struct WDLItemSpawn
-{
-	int id;
-	int x;
-	int y;
-	int z;
-	WDLPowerups item;
-};
-
 // WDL item spawns that we're keeping track of.
-typedef std::vector<WDLItemSpawn> WDLItemSpawns;
 static WDLItemSpawns wdlitemspawns;
 
-// A single tracked flag socket
-struct WDLFlagLocation
-{
-	team_t team;
-	int x;
-	int y;
-	int z;
-};
-
 // Flags that we're keeping track of.
-typedef std::vector<WDLFlagLocation> WDLFlagLocations;
 static WDLFlagLocations wdlflaglocations;
-
-// A single event.
-struct WDLEvent
-{
-	WDLEvents ev;
-	int activator;
-	int target;
-	int gametic;
-	fixed_t apos[3];
-	fixed_t tpos[3];
-	int arg0;
-	int arg1;
-	int arg2;
-	int arg3;
-};
 
 auto inline format_as(const WDLEvent& ev)
 {
@@ -163,7 +109,6 @@ auto inline format_as(const WDLEvent& ev)
 }
 
 // Events that we're keeping track of.
-typedef std::vector<WDLEvent> WDLEventLog;
 static WDLEventLog wdlevents;
 
 // Turn an event enum into a string.

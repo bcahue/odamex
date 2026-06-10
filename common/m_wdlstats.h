@@ -23,6 +23,9 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "d_player.h"
 
 enum WDLEvents {
@@ -121,6 +124,78 @@ inline auto format_as(WDLPowerups ePowerup)
 {
 	return fmt::underlying(ePowerup);
 }
+
+// ---------------------------------------------------------------------------
+// In-memory recording tables.
+//
+// Declared here (rather than file-locally in m_wdlstats.cpp) so the v6
+// aggregation module (m_wdlstats_agg) can consume the recorded event stream and
+// player table directly at match end — no text-file round-trip. The recorder
+// owns the singleton instances; these are just the shared record shapes.
+// ---------------------------------------------------------------------------
+
+// A single tracked player.
+struct WDLPlayer
+{
+	int id;                // 1-based id within this match's player table
+	int pid;               // engine netid; events reference players by this
+	std::string netname;
+	team_t team;
+	// [auth] OAuth sub (empty string if unauthenticated/bot)
+	std::string sub;
+};
+typedef std::vector<WDLPlayer> WDLPlayers;
+
+// A single tracked player spawn.
+struct WDLPlayerSpawn
+{
+	int id;
+	int x;
+	int y;
+	int z;
+	team_t team;
+};
+typedef std::vector<WDLPlayerSpawn> WDLPlayerSpawns;
+
+// A single tracked item spawn.
+struct WDLItemSpawn
+{
+	int id;
+	int x;
+	int y;
+	int z;
+	WDLPowerups item;
+};
+typedef std::vector<WDLItemSpawn> WDLItemSpawns;
+
+// A single tracked flag socket.
+struct WDLFlagLocation
+{
+	team_t team;
+	int x;
+	int y;
+	int z;
+};
+typedef std::vector<WDLFlagLocation> WDLFlagLocations;
+
+// A single recorded event. apos/tpos units follow the recorder's per-event
+// convention (M_LogWDLEvent stores map units, i.e. >> FRACBITS; the item-respawn
+// path stores raw fixed_t). The aggregator passes them through unchanged so it
+// receives exactly what the legacy parser received from the text log.
+struct WDLEvent
+{
+	WDLEvents ev;
+	int activator;         // activator netid (0 = none)
+	int target;            // target netid (0 = none)
+	int gametic;
+	fixed_t apos[3];
+	fixed_t tpos[3];
+	int arg0;
+	int arg1;
+	int arg2;
+	int arg3;
+};
+typedef std::vector<WDLEvent> WDLEventLog;
 
 void M_StartWDLLog(bool newmap);
 void M_LogWDLEvent(
