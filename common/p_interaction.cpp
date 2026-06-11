@@ -881,6 +881,10 @@ void P_GiveSpecial(player_t& player, AActor& special)
 	if (!player.mo)
 		return;
 
+	// [WDL] Snapshot pre-pickup health so the stats logger can record the exact
+	// health this pickup awards (ground truth for healthFrom*Pickups).
+	M_BeginWDLPickup(player.health);
+
 	AActor *toucher = player.mo;
 	enum class SpecialSound
 	{
@@ -2304,54 +2308,8 @@ void P_DamageMobj(AActor *target, const AActor *inflictor, AActor *source, int d
 			sangle = splayer->mo->angle / 4;
 		}
 
-		if (source == NULL && !targethasflag)
-		{
-			M_LogActorWDLEvent(WDL_EVENT_ENVIRODAMAGE, source, target, actualdamage,
-			                   armorDamage, mod, 0);
-		}
-		else if (source == NULL && targethasflag)
-		{
-			M_LogActorWDLEvent(WDL_EVENT_ENVIROCARRIERDAMAGE, source, target,
-			                   actualdamage, armorDamage, mod, f);
-		}
-		else if (source != NULL && targethasflag)
-		{
-			M_LogActorWDLEvent(WDL_EVENT_CARRIERDAMAGE, source, target, actualdamage,
-			                   armorDamage, mod, f);
-		}
-		else
-		{
-			M_LogActorWDLEvent(WDL_EVENT_DAMAGE, source, target, actualdamage,
-			                   armorDamage, mod, 0);
-		}
-
-		switch (mod)
-		{
-		case MOD_CHAINSAW:
-		case MOD_FIST:
-		case MOD_PISTOL:
-		case MOD_CHAINGUN:
-		case MOD_RAILGUN:
-			M_LogWDLEvent(WDL_EVENT_SSACCURACY, splayer, player, sangle, mod, 1,
-			              GetMaxShotsForMod(mod));
-			break;
-		case MOD_SHOTGUN:
-		case MOD_SSHOTGUN:
-			M_LogWDLEvent(WDL_EVENT_SPREADACCURACY, splayer, player, sangle, mod, 1,
-			              GetMaxShotsForMod(mod));
-			break;
-		case MOD_ROCKET:
-		case MOD_R_SPLASH:
-		case MOD_BFG_BOOM:
-		case MOD_PLASMARIFLE:
-			M_LogWDLEvent(WDL_EVENT_PROJACCURACY, splayer, player, sangle, mod, 1,
-			              GetMaxShotsForMod(mod));
-			break;
-		case MOD_BFG_SPLASH:
-			M_LogWDLEvent(WDL_EVENT_TRACERACCURACY, splayer, player, sangle, mod, 1,
-			              GetMaxShotsForMod(mod));
-			break;
-		}
+		M_LogWDLPlayerDamage(source, target, actualdamage, armorDamage, mod, targethasflag, f);
+		M_LogWDLAccuracyHit(splayer, player, static_cast<int>(sangle), mod);
 
 		player->health -= damage; // mirror mobj health here for Dave
 		target->health -= damage; // Do the same.
@@ -2427,24 +2385,9 @@ void P_DamageMobj(AActor *target, const AActor *inflictor, AActor *source, int d
 
 	if (target->health <= 0)
 	{
-		// WDL damage events.
+		// WDL kill event.
 		// todo: handle voodoo dolls here
-		if (source == NULL && targethasflag)
-		{
-			M_LogActorWDLEvent(WDL_EVENT_ENVIROCARRIERKILL, source, target, f, 0, mod, 0);
-		}
-		else if (source == NULL)
-		{
-			M_LogActorWDLEvent(WDL_EVENT_ENVIROKILL, source, target, 0, 0, mod, 0);
-		}
-		else if (targethasflag)
-		{
-			M_LogActorWDLEvent(WDL_EVENT_CARRIERKILL, source, target, f, 0, mod, 0);
-		}
-		else
-		{
-			M_LogActorWDLEvent(WDL_EVENT_KILL, source, target, 0, 0, mod, 0);
-		}
+		M_LogWDLPlayerKill(source, target, mod, targethasflag, f);
 
 		P_KillMobj(source, target, inflictor, false);
 
@@ -2562,15 +2505,8 @@ void P_PlayerLeavesGame(player_s* player)
 		// don't want to log disconnects for players that never fully joined.
 		if (M_CheckIfPlayerInLogs(player->id))
 		{
-			if (targethasflag)
-			{
-				M_LogWDLEvent(WDL_EVENT_CARRIERKILL, player, player, f, 0, MOD_EXIT, 0);
-			}
-			else
-			{
-				M_LogWDLEvent(WDL_EVENT_KILL, player, player, 0, 0, MOD_EXIT, 0);
-			}
-			M_LogWDLEvent(WDL_EVENT_DISCONNECT, player, NULL, current, 0, 0, 0);
+			M_LogWDLPlayerExitKill(*player, targethasflag, f);
+			M_LogWDLPlayerDisconnect(*player, current, 0);
 		}
 	}
 

@@ -2714,8 +2714,7 @@ void P_ExplodeMissile (AActor* mo)
 			break;
 		}
 
-		M_LogWDLEvent(WDL_EVENT_PROJACCURACY, mo->target->player, NULL,
-		              mo->target->player->mo->angle / 4, mod, 0, GetMaxShotsForMod(mod));
+		M_LogWDLAccuracyShot(*mo->target->player, mo->target->player->mo->angle / 4, mod);
 	}
 
 	SV_ExplodeMissile(mo);

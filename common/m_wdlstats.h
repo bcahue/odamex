@@ -178,10 +178,10 @@ struct WDLFlagLocation
 };
 typedef std::vector<WDLFlagLocation> WDLFlagLocations;
 
-// A single recorded event. apos/tpos units follow the recorder's per-event
-// convention (M_LogWDLEvent stores map units, i.e. >> FRACBITS; the item-respawn
-// path stores raw fixed_t). The aggregator passes them through unchanged so it
-// receives exactly what the legacy parser received from the text log.
+// A single recorded text-log event (parity dump only). apos/tpos units follow the
+// recorder's per-event convention (the WDLLogText path stores map units, i.e.
+// >> FRACBITS; the item-respawn path stores raw fixed_t), matching what the legacy
+// parser received from the text log.
 struct WDLEvent
 {
 	WDLEvents ev;
@@ -198,14 +198,29 @@ struct WDLEvent
 typedef std::vector<WDLEvent> WDLEventLog;
 
 void M_StartWDLLog(bool newmap);
-void M_LogWDLEvent(
-	WDLEvents eventtype, const player_t* activator, const player_t* target,
-	int arg0, int arg1, int arg2, int arg3
-);
-void M_LogActorWDLEvent(
-	WDLEvents eventtype, AActor* activator, AActor* target,
-	int arg0, int arg1, int arg2, int arg3
-);
+
+// Typed WDL event API — called from normal game flow at the point each event
+// happens. Each awards the stat to the live game and records the text-log line;
+// there is no generic enum funnel. (flagTeam / targetHasFlag describe CTF flag
+// state at the moment of the event; angleBits is the firing angle >> 2.)
+void M_LogWDLPlayerDamage(AActor* source, AActor* target, int hp, int armor, int mod,
+                          bool targetHasFlag, team_t flagTeam);
+void M_LogWDLPlayerKill(AActor* source, AActor* target, int mod, bool targetHasFlag,
+                        team_t flagTeam);
+void M_LogWDLPlayerExitKill(player_t& player, bool targetHasFlag, team_t flagTeam);
+void M_LogWDLAccuracyShot(player_t& shooter, int angleBits, int mod);
+void M_LogWDLAccuracyHit(player_t* shooter, player_t* target, int angleBits, int mod);
+void M_LogWDLProjectileFire(player_t& shooter, int angleBits, int mod);
+void M_LogWDLFlagGrab(player_t& player, team_t flagTeam);
+void M_LogWDLFlagPickup(player_t& player, team_t flagTeam);
+void M_LogWDLFlagCarryReturn(player_t& player, team_t flagTeam);
+void M_LogWDLFlagReturn(player_t* player, team_t flagTeam);
+void M_LogWDLFlagCapture(player_t& player, team_t flagTeam, bool pickupCapture);
+void M_LogWDLPlayerSpawnEvent(player_t& player, team_t team, int spawnId);
+void M_LogWDLPlayerBeacon(player_t& player, int angleBits);
+void M_LogWDLPlayerJoin(player_t& player, team_t team, int playerId);
+void M_LogWDLPlayerDisconnect(player_t& player, team_t team, int playerId);
+
 int M_GetPlayerId(const player_t& player, team_t team);
 bool M_CheckIfPlayerInLogs(const int playerid);
 void M_LogWDLPlayerSpawn(const mapthing2_t& mthing);
@@ -213,6 +228,10 @@ void M_RemoveWDLPlayerSpawn(const mapthing2_t& mthing);
 void M_LogWDLItemRespawnEvent(AActor* activator);
 void M_LogWDLFlagLocation(const mapthing2_t& activator, team_t team);
 void M_LogWDLPickupEvent(const player_t* activator, AActor* target, WDLPowerups pickuptype, bool dropped);
+// Call at the top of pickup handling (P_GiveSpecial) with the player's health
+// BEFORE the pickup is applied. The next M_LogWDLPickupEvent computes the heal
+// delta from it (engine ground truth) for healthFrom{Power,NonPower}Pickups.
+void M_BeginWDLPickup(int preHealth);
 void M_LogWDLItemSpawn(const AActor& target, WDLPowerups type);
 int M_GetPlayerSpawn(int x, int y);
 void M_HandleWDLNameChange(team_t team, std::string oldname, std::string newname, int netid);

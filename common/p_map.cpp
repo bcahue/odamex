@@ -3084,9 +3084,7 @@ static bool PIT_DoomRadiusAttack(AActor* thing)
 	{
 		if (bombsource && bombsource->player)
 		{
-			M_LogWDLEvent(WDL_EVENT_PROJACCURACY, bombsource->player, NULL,
-			              bombsource->player->mo->angle / 4, bombmod, 0,
-			              GetMaxShotsForMod(bombmod));
+			M_LogWDLAccuracyShot(*bombsource->player, bombsource->player->mo->angle / 4, bombmod);
 		}
 		return true; // out of range
 	}
@@ -3208,9 +3206,7 @@ static bool PIT_ZDoomRadiusAttack(AActor* thing)
 	{
 		if (bombsource && bombsource->player)
 		{
-			M_LogWDLEvent(WDL_EVENT_PROJACCURACY, bombsource->player, NULL,
-			              bombsource->player->mo->angle / 4, bombmod, 0,
-			              GetMaxShotsForMod(bombmod));
+			M_LogWDLAccuracyShot(*bombsource->player, bombsource->player->mo->angle / 4, bombmod);
 		}
 	}
 

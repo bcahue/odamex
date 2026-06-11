@@ -27,11 +27,37 @@
 
 #include "g_levelstate.h"
 #include "m_wdlstats.h"
+#include "m_wdlstats_agg.h"
 
 #include "c_dispatch.h"
 #include "p_local.h"
+#include "teaminfo.h"
 
 #define WDLSTATS_VERSION 6
+
+// [auth] §3 (B) native capture: a player carries a flag iff they are some team's
+// recorded flagger. Read off live engine state when an event is logged.
+static bool PlayerCarriesFlag(const player_t* p)
+{
+	if (p == NULL)
+		return false;
+	for (size_t i = 0; i < NUMTEAMS; i++)
+	{
+		TeamInfo* ti = GetTeamInfo(static_cast<team_t>(i));
+		if (ti != NULL && &idplayer(ti->FlagData.flagger) == p)
+			return true;
+	}
+	return false;
+}
+
+// The CARRIER* event variants are the engine-authoritative signal that the
+// target held a flag at the instant the event fired (timing-safe vs. reading
+// flag state after, e.g., a death has already dropped it).
+static bool WDLEventTargetIsCarrier(WDLEvents event)
+{
+	return event == WDL_EVENT_CARRIERDAMAGE || event == WDL_EVENT_ENVIROCARRIERDAMAGE ||
+	       event == WDL_EVENT_CARRIERKILL || event == WDL_EVENT_ENVIROCARRIERKILL;
+}
 
 EXTERN_CVAR(sv_gametype)
 EXTERN_CVAR(sv_hostname)
@@ -110,6 +136,74 @@ auto inline format_as(const WDLEvent& ev)
 
 // Events that we're keeping track of.
 static WDLEventLog wdlevents;
+
+// [auth] §3 (B) the v6 game is compiled live, as part of normal game flow: each
+// M_Log* event below updates this accumulator directly at the source — there is
+// no event-dispatch / re-parse layer and no end-of-match replay. Reset to a fresh
+// game on each M_StartWDLLog; ::wdlstate.recording gates whether it is being fed.
+// (::wdlevents and the text-log writer are kept only so the C# parser can be run
+// over the same match for JSON parity comparison.)
+static WDLAggGame g_liveGame;
+
+// Resolve the live-game accumulator entry for a player, or NULL when not
+// recording / the player isn't one we're tracking. Keeps the game's player table
+// in sync with the recorder's first (players join mid-match).
+static WDLAggPlayer* WDLAgg(const player_t* p)
+{
+	if (!::wdlstate.recording || p == NULL)
+		return NULL;
+	::g_liveGame.SyncPlayers(::wdlplayers);
+	return ::g_liveGame.PlayerByNetId(p->id);
+}
+
+// Match-relative tic for an event happening now.
+static int WDLTics()
+{
+	return ::gametic - ::wdlstate.begintic;
+}
+
+// A player's body position in the units the stats use (fixed_t >> FRACBITS).
+static void WDLBodyPos(const player_t* p, int& x, int& y, int& z)
+{
+	x = y = z = 0;
+	if (p != NULL && p->mo)
+	{
+		x = p->mo->x >> FRACBITS;
+		y = p->mo->y >> FRACBITS;
+		z = p->mo->z >> FRACBITS;
+	}
+}
+
+// Which accuracy event a weapon's means-of-death maps to (false = the mod is not
+// accuracy-tracked, mirroring the legacy switch that had no default case).
+static bool WDLAccuracyEventForMod(int mod, WDLEvents& out)
+{
+	switch (mod)
+	{
+	case MOD_CHAINSAW:
+	case MOD_FIST:
+	case MOD_PISTOL:
+	case MOD_CHAINGUN:
+	case MOD_RAILGUN:
+		out = WDL_EVENT_SSACCURACY;
+		return true;
+	case MOD_SHOTGUN:
+	case MOD_SSHOTGUN:
+		out = WDL_EVENT_SPREADACCURACY;
+		return true;
+	case MOD_ROCKET:
+	case MOD_R_SPLASH:
+	case MOD_BFG_BOOM:
+	case MOD_PLASMARIFLE:
+		out = WDL_EVENT_PROJACCURACY;
+		return true;
+	case MOD_BFG_SPLASH:
+		out = WDL_EVENT_TRACERACCURACY;
+		return true;
+	default:
+		return false;
+	}
+}
 
 // Turn an event enum into a string.
 //static const char* WDLEventString(WDLEvents i)
@@ -383,6 +477,7 @@ void M_StartWDLLog(bool newmap)
 	if (::wdlstate.logdir.empty())
 	{
 		::wdlstate.recording = false;
+		::g_liveGame = WDLAggGame();
 		return;
 	}
 
@@ -435,6 +530,12 @@ void M_StartWDLLog(bool newmap)
 
 	// Set our starting tic.
 	::wdlstate.begintic = ::gametic;
+
+	// Spin up a fresh live aggregator for this match. Players are added lazily as
+	// they generate events (WDLAgg -> SyncPlayers). endGameTic is unknown until the
+	// match ends and is unused while accumulating, so pass 0.
+	::g_liveGame = WDLAggGame(static_cast<WDLGameTypeV6>(::sv_gametype.asInt()),
+	                          ::wdlstate.begintic, 0);
 
 	PrintFmt(PRINT_HIGH, "wdlstats: Started, will log to directory \"{}\".\n",
 	       wdlstate.logdir);
@@ -640,6 +741,8 @@ void M_LogWDLItemRespawnEvent(AActor* activator)
 	}
 
 	// Add the event to the log.
+	// Item respawns have no GameV6 stat, so nothing is awarded here — the text-log
+	// record is kept only for parser parity.
 	WDLEvent evt = {WDL_EVENT_SPAWNITEM, 0,     0,        ::gametic, {ax, ay, az},
 	                {0, 0, 0},           itemtype, itemspawnid, 0,         0};
 	::wdlevents.push_back(evt);
@@ -655,6 +758,15 @@ void M_LogWDLItemRespawnEvent(AActor* activator)
  * can ignore item pickups that only get picked up at the same location once if item
  * respawn is on.
  */
+// Pre-pickup health stashed by M_BeginWDLPickup, used to derive the heal delta
+// the next pickup event awarded (§3 (B) native capture).
+static int s_pickupPreHealth = 0;
+
+void M_BeginWDLPickup(int preHealth)
+{
+	s_pickupPreHealth = preHealth;
+}
+
 void M_LogWDLPickupEvent(const player_t* activator, AActor* target, WDLPowerups pickuptype,
                          bool dropped)
 {
@@ -703,39 +815,38 @@ void M_LogWDLPickupEvent(const player_t* activator, AActor* target, WDLPowerups 
 			itemspawnid = GetItemSpawn(tx, ty, tz, pickuptype);
 	}
 
-	// Add the event to the log.
+	// [auth] §3 (B): award the pickup straight into the live game. The health it
+	// actually added is ground truth — post-pickup health minus the pre-pickup
+	// health stashed by M_BeginWDLPickup at the top of P_GiveSpecial.
+	WDLAggPlayer* a = WDLAgg(activator);
+	if (a != NULL)
+		a->AwardPickup(static_cast<int>(pickuptype), itemspawnid, dropped, WDLTics(),
+		               activator->health - s_pickupPreHealth);
+
+	// Text-log record (kept only for parser parity).
 	WDLEvent evt = {
 	    WDL_EVENT_PICKUPITEM, aid,        tid,         ::gametic, {ax, ay, az},
 	    {tx, ty, tz},         pickuptype, itemspawnid, dropitem,  0};
 	::wdlevents.push_back(evt);
 }
 
-/**
- * Log a WDL event.
- *
- * The particulars of what you pass to this needs to be checked against the document.
- */
-void M_LogWDLEvent(WDLEvents event, const player_t* activator, const player_t* target, int arg0,
-                   int arg1, int arg2, int arg3)
+// Append one event to the text log only. The log is an enum-tagged serialization
+// (and the only thing the C# parser still consumes), so it legitimately keeps the
+// event enum; stat awarding is done directly by the typed M_LogWDL* functions
+// below. Reproduces the original recorder's same-tic merge so the log stays
+// byte-identical for parity.
+static void WDLLogText(WDLEvents event, const player_t* activator, const player_t* target, int arg0,
+                       int arg1, int arg2, int arg3)
 {
 	if (!::wdlstate.recording)
 		return;
 
-	if (event == WDL_EVENT_PLAYERBEACON && !::wdlstate.enablebeacons)
-		return;
-
-	// Activator
 	fixed_t aid = 0;
-	int ax = 0;
-	int ay = 0;
-	int az = 0;
+	int ax = 0, ay = 0, az = 0;
 	if (activator != NULL)
 	{
-		// Add the activator.
 		AddWDLPlayer(*activator);
 		aid = activator->id;
-
-		// Add the activator's body information.
 		if (activator->mo)
 		{
 			ax = activator->mo->x >> FRACBITS;
@@ -744,18 +855,12 @@ void M_LogWDLEvent(WDLEvents event, const player_t* activator, const player_t* t
 		}
 	}
 
-	// Target
 	fixed_t tid = 0;
-	int tx = 0;
-	int ty = 0;
-	int tz = 0;
+	int tx = 0, ty = 0, tz = 0;
 	if (target != NULL)
 	{
-		// Add the target.
 		AddWDLPlayer(*target);
 		tid = target->id;
-
-		// Add the target's body information.
 		if (target->mo)
 		{
 			tx = target->mo->x >> FRACBITS;
@@ -764,7 +869,11 @@ void M_LogWDLEvent(WDLEvents event, const player_t* activator, const player_t* t
 		}
 	}
 
-	// Damage events are handled specially.
+	WDLEvent evt = {event,        aid,  tid,  ::gametic, {ax, ay, az},
+	                {tx, ty, tz}, arg0, arg1, arg2,      arg3};
+
+	// Damage events are handled specially: same-tic pieces are merged in place, so
+	// the merged event already in ::wdlevents stands in for this piece.
 	if (activator && target &&
 	    (event == WDL_EVENT_DAMAGE || event == WDL_EVENT_CARRIERDAMAGE))
 	{
@@ -790,30 +899,329 @@ void M_LogWDLEvent(WDLEvents event, const player_t* activator, const player_t* t
 			return;
 	}
 
-	// Add the event to the log.
-	WDLEvent evt = {event,        aid,  tid,  ::gametic, {ax, ay, az},
-	                {tx, ty, tz}, arg0, arg1, arg2,      arg3};
 	::wdlevents.push_back(evt);
 }
 
-/**
- * Log a WDL event when you have actor pointers.
- */
-void M_LogActorWDLEvent(WDLEvents event, AActor* activator, AActor* target, int arg0,
-                        int arg1, int arg2, int arg3)
+// Award one accuracy record (shot: hits==0, or hit: hits>0) to the shooter,
+// routing to the right recorder for the weapon. Shared by the shot/hit entries.
+static void WDLAwardAccuracy(const player_t* shooter, const player_t* target, int angleBits, int mod,
+                            unsigned hits)
+{
+	WDLAggPlayer* aAgg = WDLAgg(shooter);
+	if (aAgg == NULL)
+		return;
+
+	WDLEvents ev;
+	if (!WDLAccuracyEventForMod(mod, ev))
+		return;
+
+	WDLAggPlayer* tAgg = WDLAgg(target);
+	const int targetId = tAgg ? tAgg->id : 0;
+	const team_t enemyTeam = tAgg ? tAgg->team : TEAM_NONE;
+	int ax, ay, az, tx, ty, tz;
+	WDLBodyPos(shooter, ax, ay, az);
+	WDLBodyPos(target, tx, ty, tz);
+	const int tics = WDLTics();
+	const unsigned maxShots = static_cast<unsigned>(GetMaxShotsForMod(mod));
+	const bool hasFlag = PlayerCarriesFlag(shooter);
+
+	switch (ev)
+	{
+	case WDL_EVENT_SSACCURACY:
+	case WDL_EVENT_SPREADACCURACY:
+		aAgg->RecordHitscanAccuracy(hits, maxShots, targetId, enemyTeam, angleBits, ax, ay, az, tx,
+		                            ty, tz, mod, tics, hasFlag);
+		break;
+	case WDL_EVENT_PROJACCURACY:
+		aAgg->RecordProjectileAccuracy(hits, maxShots, targetId, enemyTeam, angleBits, ax, ay, az,
+		                               tx, ty, tz, mod, tics, hasFlag);
+		break;
+	case WDL_EVENT_TRACERACCURACY:
+		aAgg->RecordTracerAccuracy(hits, maxShots, targetId, enemyTeam, angleBits, ax, ay, az, tx,
+		                           ty, tz, mod, tics, hasFlag);
+		break;
+	default:
+		break;
+	}
+}
+
+// ===========================================================================
+// Typed WDL event API. The game calls these at the point each event happens;
+// each one awards the stat directly to the live game and records the text-log
+// line. (There is no generic enum funnel and no central dispatch.)
+// ===========================================================================
+
+void M_LogWDLPlayerDamage(AActor* source, AActor* target, int hp, int armor, int mod,
+                          bool targetHasFlag, team_t flagTeam)
 {
 	if (!::wdlstate.recording)
 		return;
 
-	player_t* ap = NULL;
-	if (activator != NULL && activator->type == MT_PLAYER)
-		ap = activator->player;
+	player_t* sp = (source != NULL && source->type == MT_PLAYER) ? source->player : NULL;
+	player_t* tp = (target != NULL && target->type == MT_PLAYER) ? target->player : NULL;
+	const bool noSource = (source == NULL);
 
-	player_t* tp = NULL;
-	if (target != NULL && target->type == MT_PLAYER)
-		tp = target->player;
+	// Text log: pick the variant the call site used to choose.
+	WDLEvents ev;
+	int arg3;
+	if (noSource && !targetHasFlag)
+	{
+		ev = WDL_EVENT_ENVIRODAMAGE;
+		arg3 = 0;
+	}
+	else if (noSource && targetHasFlag)
+	{
+		ev = WDL_EVENT_ENVIROCARRIERDAMAGE;
+		arg3 = static_cast<int>(flagTeam);
+	}
+	else if (!noSource && targetHasFlag)
+	{
+		ev = WDL_EVENT_CARRIERDAMAGE;
+		arg3 = static_cast<int>(flagTeam);
+	}
+	else
+	{
+		ev = WDL_EVENT_DAMAGE;
+		arg3 = 0;
+	}
+	WDLLogText(ev, sp, tp, hp, armor, mod, arg3);
 
-	M_LogWDLEvent(event, ap, tp, arg0, arg1, arg2, arg3);
+	// Award.
+	WDLAggPlayer* tAgg = WDLAgg(tp);
+	if (tAgg == NULL)
+		return;
+	WDLAggPlayer* aAgg = WDLAgg(sp);
+	int ax, ay, az, tx, ty, tz;
+	WDLBodyPos(sp, ax, ay, az);
+	WDLBodyPos(tp, tx, ty, tz);
+	const int tics = WDLTics();
+	const WDLArmorV6 targetArmor = tp != NULL ? WDLMapArmorType(tp->armortype) : WDLArmorV6::None;
+
+	if (aAgg == NULL)
+	{
+		// No player source: environmental damage is awarded to the victim; damage
+		// from a non-player (monster) is dropped, as before.
+		if (noSource)
+			tAgg->AwardDamageToPlayer(-1, "World", hp, armor, targetArmor,
+			                          WDLDamageTypeV6::EnvironmentalDamage, mod, targetHasFlag, false,
+			                          tics, ax, ay, az, tx, ty, tz);
+	}
+	else if (aAgg->id == tAgg->id)
+	{
+		tAgg->AwardDamageToPlayer(tAgg->id, tAgg->name, hp, armor, targetArmor,
+		                          WDLDamageTypeV6::SelfDamage, mod, targetHasFlag, false, tics, ax,
+		                          ay, az, tx, ty, tz);
+	}
+	else
+	{
+		const WDLDamageTypeV6 dt = (::g_liveGame.IsTeamGame() && aAgg->team == tAgg->team)
+		                               ? WDLDamageTypeV6::DamageByTeammate
+		                               : WDLDamageTypeV6::DamageByEnemyPlayer;
+		aAgg->AwardDamageToPlayer(tAgg->id, tAgg->name, hp, armor, targetArmor, dt, mod,
+		                          PlayerCarriesFlag(sp), targetHasFlag, tics, ax, ay, az, tx, ty, tz);
+	}
+}
+
+void M_LogWDLPlayerKill(AActor* source, AActor* target, int mod, bool targetHasFlag, team_t flagTeam)
+{
+	if (!::wdlstate.recording)
+		return;
+
+	player_t* sp = (source != NULL && source->type == MT_PLAYER) ? source->player : NULL;
+	player_t* tp = (target != NULL && target->type == MT_PLAYER) ? target->player : NULL;
+	const bool noSource = (source == NULL);
+
+	WDLEvents ev;
+	int arg0;
+	if (noSource && targetHasFlag)
+	{
+		ev = WDL_EVENT_ENVIROCARRIERKILL;
+		arg0 = static_cast<int>(flagTeam);
+	}
+	else if (noSource)
+	{
+		ev = WDL_EVENT_ENVIROKILL;
+		arg0 = 0;
+	}
+	else if (targetHasFlag)
+	{
+		ev = WDL_EVENT_CARRIERKILL;
+		arg0 = static_cast<int>(flagTeam);
+	}
+	else
+	{
+		ev = WDL_EVENT_KILL;
+		arg0 = 0;
+	}
+	WDLLogText(ev, sp, tp, arg0, 0, mod, 0);
+
+	WDLAggPlayer* tAgg = WDLAgg(tp);
+	if (tAgg == NULL)
+		return;
+	WDLAggPlayer* aAgg = WDLAgg(sp);
+	int ax, ay, az, tx, ty, tz;
+	WDLBodyPos(sp, ax, ay, az);
+	WDLBodyPos(tp, tx, ty, tz);
+	const int tics = WDLTics();
+
+	WDLDeathTypeV6 deathType;
+	if (aAgg == NULL)
+		deathType = noSource ? WDLDeathTypeV6::Environmental : WDLDeathTypeV6::Suicide;
+	else if (aAgg->name == tAgg->name) // suicide(-with-flag) edge case
+		deathType = WDLDeathTypeV6::Suicide;
+	else
+	{
+		const bool isTeamKill = ::g_liveGame.IsTeamGame() && aAgg->team == tAgg->team;
+		deathType = WDLDeathTypeV6::KilledByPlayer;
+		aAgg->AwardKill(targetHasFlag, PlayerCarriesFlag(sp), isTeamKill, mod, tics, tAgg->id,
+		                tAgg->name, tx, ty, tz, ax, ay, az);
+	}
+	tAgg->PlayerKilled(tics, deathType, mod, targetHasFlag, tx, ty, tz);
+}
+
+void M_LogWDLPlayerExitKill(player_t& player, bool targetHasFlag, team_t flagTeam)
+{
+	if (!::wdlstate.recording)
+		return;
+
+	WDLLogText(targetHasFlag ? WDL_EVENT_CARRIERKILL : WDL_EVENT_KILL, &player, &player,
+	           targetHasFlag ? static_cast<int>(flagTeam) : 0, 0, MOD_EXIT, 0);
+
+	WDLAggPlayer* tAgg = WDLAgg(&player);
+	if (tAgg == NULL)
+		return;
+	int x, y, z;
+	WDLBodyPos(&player, x, y, z);
+	tAgg->PlayerKilled(WDLTics(), WDLDeathTypeV6::Suicide, MOD_EXIT, targetHasFlag, x, y, z);
+}
+
+// Internal flag-touch worker shared by the three named entry points below.
+static void WDLFlagTouch(player_t& player, team_t flagTeam, WDLFlagTouchTypeV6 kind, WDLEvents ev)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLLogText(ev, &player, NULL, static_cast<int>(flagTeam), 0, 0, 0);
+	WDLAggPlayer* aAgg = WDLAgg(&player);
+	if (aAgg == NULL)
+		return;
+	int x, y, z;
+	WDLBodyPos(&player, x, y, z);
+	::g_liveGame.OnFlagTouch(aAgg, kind, WDLTics(), player.health, player.armorpoints,
+	                         WDLMapArmorType(player.armortype), x, y, z);
+}
+
+void M_LogWDLFlagGrab(player_t& player, team_t flagTeam)
+{
+	WDLFlagTouch(player, flagTeam, WDLFlagTouchTypeV6::FlagTouch, WDL_EVENT_TOUCH);
+}
+
+void M_LogWDLFlagPickup(player_t& player, team_t flagTeam)
+{
+	WDLFlagTouch(player, flagTeam, WDLFlagTouchTypeV6::PickupFlagTouch, WDL_EVENT_PICKUPTOUCH);
+}
+
+void M_LogWDLFlagCarryReturn(player_t& player, team_t flagTeam)
+{
+	WDLFlagTouch(player, flagTeam, WDLFlagTouchTypeV6::CarryReturnFlagTouch,
+	             WDL_EVENT_CARRYRETURNFLAG);
+}
+
+void M_LogWDLFlagReturn(player_t* player, team_t flagTeam)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLLogText(WDL_EVENT_RETURNFLAG, player, NULL, static_cast<int>(flagTeam), 0, 0, 0);
+	WDLAggPlayer* aAgg = WDLAgg(player);
+	if (aAgg == NULL)
+		return;
+	int x, y, z;
+	WDLBodyPos(player, x, y, z);
+	aAgg->AwardFlagReturn(x, y, z, WDLTics());
+}
+
+void M_LogWDLFlagCapture(player_t& player, team_t flagTeam, bool pickupCapture)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLLogText(pickupCapture ? WDL_EVENT_PICKUPCAPTURE : WDL_EVENT_CAPTURE, &player, NULL,
+	           static_cast<int>(flagTeam), 0, 0, 0);
+	WDLAggPlayer* aAgg = WDLAgg(&player);
+	if (aAgg == NULL)
+		return;
+	int x, y, z;
+	WDLBodyPos(&player, x, y, z);
+	::g_liveGame.OnFlagCapture(aAgg, pickupCapture, WDLTics(), player.health, player.armorpoints,
+	                           WDLMapArmorType(player.armortype), x, y, z);
+}
+
+void M_LogWDLPlayerSpawnEvent(player_t& player, team_t team, int spawnId)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLLogText(WDL_EVENT_SPAWNPLAYER, &player, NULL, static_cast<int>(team), 0, spawnId, 0);
+	WDLAggPlayer* aAgg = WDLAgg(&player);
+	if (aAgg != NULL)
+		aAgg->RecordPlayerSpawn(spawnId, WDLTics());
+}
+
+void M_LogWDLPlayerBeacon(player_t& player, int angleBits)
+{
+	if (!::wdlstate.recording || !::wdlstate.enablebeacons)
+		return;
+	WDLLogText(WDL_EVENT_PLAYERBEACON, &player, NULL, angleBits, 0, 0, 0);
+	WDLAggPlayer* aAgg = WDLAgg(&player);
+	if (aAgg == NULL)
+		return;
+	int x, y, z;
+	WDLBodyPos(&player, x, y, z);
+	aAgg->RecordPlayerBeacon(angleBits, x, y, z, WDLTics());
+}
+
+void M_LogWDLProjectileFire(player_t& player, int angleBits, int mod)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLLogText(WDL_EVENT_PROJFIRE, &player, NULL, angleBits, mod, 0, 0);
+	WDLAggPlayer* aAgg = WDLAgg(&player);
+	if (aAgg == NULL)
+		return;
+	int x, y, z;
+	WDLBodyPos(&player, x, y, z);
+	aAgg->RecordProjectileFire(angleBits, WDLTics(), mod, x, y, z);
+}
+
+void M_LogWDLAccuracyShot(player_t& shooter, int angleBits, int mod)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLEvents ev;
+	if (!WDLAccuracyEventForMod(mod, ev))
+		return;
+	WDLLogText(ev, &shooter, NULL, angleBits, mod, 0, GetMaxShotsForMod(mod));
+	WDLAwardAccuracy(&shooter, NULL, angleBits, mod, 0);
+}
+
+void M_LogWDLAccuracyHit(player_t* shooter, player_t* target, int angleBits, int mod)
+{
+	if (!::wdlstate.recording)
+		return;
+	WDLEvents ev;
+	if (!WDLAccuracyEventForMod(mod, ev))
+		return;
+	WDLLogText(ev, shooter, target, angleBits, mod, 1, GetMaxShotsForMod(mod));
+	WDLAwardAccuracy(shooter, target, angleBits, mod, 1);
+}
+
+void M_LogWDLPlayerJoin(player_t& player, team_t team, int playerId)
+{
+	// No GameV6 stat for joins; recorded for the text log / parser only.
+	WDLLogText(WDL_EVENT_JOINGAME, &player, NULL, static_cast<int>(team), playerId, 0, 0);
+}
+
+void M_LogWDLPlayerDisconnect(player_t& player, team_t team, int playerId)
+{
+	// No GameV6 stat for disconnects; recorded for the text log / parser only.
+	WDLLogText(WDL_EVENT_DISCONNECT, &player, NULL, static_cast<int>(team), playerId, 0, 0);
 }
 
 void M_LogWDLPlayerSpawn(const mapthing2_t& mthing)
@@ -967,6 +1375,59 @@ void M_CommitWDLLog()
 	::wdlstate.recording = false;
 
 	PrintFmt(PRINT_HIGH, "wdlstats: Log saved as \"{}\".\n", filename);
+}
+
+// Assemble a finished GameV6 from the recorder's current in-memory tables plus
+// the match metadata (same header values M_CommitWDLLog writes). The aggregator
+// consumes the in-memory event stream directly — no text-file round-trip.
+WDLGameV6 M_BuildWDLGameV6()
+{
+	WDLAggMeta meta;
+	meta.version = WDLSTATS_VERSION;
+
+	// ISO-8601 UTC, the same source the text writer's time= header uses.
+	time_t now;
+	time(&now);
+	char iso8601buf[sizeof "2011-10-08T07:07:09Z"];
+	strftime(iso8601buf, sizeof iso8601buf, "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+	meta.date = iso8601buf;
+
+	meta.levelNum = ::level.levelnum;
+	meta.levelName = ::level.level_name;
+	meta.lives = ::g_lives.asInt();
+	meta.gameType = ::sv_gametype.asInt();
+	meta.attackDefend = ::g_sides.asInt();
+	meta.durationTics = ::gametic - ::wdlstate.begintic;
+	meta.round = ::levelstate.getRound();
+	meta.winResult = static_cast<int>(::levelstate.getWinInfo().type);
+	meta.winId = ::levelstate.getWinInfo().id;
+	meta.hostName = ::sv_hostname.str();
+	meta.originalLogFileName = ""; // no source file on the JSON-upload path
+
+	// Wads: parse the "basename,hash\n" lines M_GetCurrentWadHashes() returns.
+	std::vector<WDLWadV6> wads;
+	const std::string hashes = M_GetCurrentWadHashes();
+	for (size_t start = 0; start < hashes.size();)
+	{
+		const size_t nl = hashes.find('\n', start);
+		const std::string line =
+		    hashes.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+		start = (nl == std::string::npos) ? hashes.size() : nl + 1;
+		if (line.empty())
+			continue;
+		const size_t comma = line.find(',');
+		if (comma == std::string::npos)
+			continue;
+		wads.push_back(WDLWadV6{line.substr(0, comma), line.substr(comma + 1)});
+	}
+
+	// The match was compiled live (g_liveGame) as it was played — there is no
+	// end-of-match replay. Just sync any last players, close out in-flight state,
+	// and assemble. (If nothing was recorded this is a default-constructed game and
+	// Build yields empty stats, which the serializer drops.)
+	::g_liveGame.SyncPlayers(::wdlplayers);
+	::g_liveGame.Finalize();
+	return ::g_liveGame.Build(meta, ::wdlitemspawns, ::wdlplayerspawns, ::wdlflaglocations, wads);
 }
 
 static void PrintWDLEvent(const WDLEvent& evt)

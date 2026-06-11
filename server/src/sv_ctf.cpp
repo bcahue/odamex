@@ -144,17 +144,17 @@ ItemEquipVal SV_FlagGrab (player_t &player, team_t f, bool firstgrab)
 			teamInfo->FlagData.firstgrab = true;
 			SV_BroadcastPrintFmt("{} has taken the {} flag!\n", player.userinfo.netname, teamInfo->ColorizedTeamName());
 			SV_CTFEvent (f, SCORE_FIRSTGRAB, player);
-			M_LogWDLEvent(WDL_EVENT_TOUCH, &player, NULL, f, 0, 0, 0);
+			M_LogWDLFlagGrab(player, f);
 		} else {
 			teamInfo->FlagData.firstgrab = false;
 			SV_BroadcastPrintFmt("{} picked up the {} flag!\n", player.userinfo.netname, teamInfo->ColorizedTeamName());
 			SV_CTFEvent (f, SCORE_GRAB, player);
-			M_LogWDLEvent(WDL_EVENT_PICKUPTOUCH, &player, NULL, f, 0, 0, 0);
+			M_LogWDLFlagPickup(player, f);
 		}
 	} else {
 		SV_BroadcastPrintFmt("{} is recovering the {} flag!\n", player.userinfo.netname, teamInfo->ColorizedTeamName());
 		SV_CTFEvent (f, SCORE_MANUALRETURN, player);
-		M_LogWDLEvent(WDL_EVENT_CARRYRETURNFLAG, &player, NULL, f, 0, 0, 0);
+		M_LogWDLFlagCarryReturn(player, f);
 	}
 
 	return IEV_EquipRemove;
@@ -171,7 +171,7 @@ void SV_FlagReturn (player_t &player, team_t f)
 	CTF_SpawnFlag (f);
 
 	SV_BroadcastPrintFmt("{} has returned the {} flag.\n", player.userinfo.netname, V_GetTeamColor(f));
-	M_LogWDLEvent(WDL_EVENT_RETURNFLAG, &player, NULL, f, 0, 0, 0);
+	M_LogWDLFlagReturn(&player, f);
 }
 
 //
@@ -214,10 +214,7 @@ void SV_FlagScore (player_t &player, team_t f)
 						  teamInfo->ColorizedTeamName(),
 						  CTF_TimeMSG(time_held));
 
-	if (teamInfo->FlagData.firstgrab)
-		M_LogWDLEvent(WDL_EVENT_CAPTURE, &player, NULL, f, 0, 0, 0);
-	else
-		M_LogWDLEvent(WDL_EVENT_PICKUPCAPTURE, &player, NULL, f, 0, 0, 0);
+	M_LogWDLFlagCapture(player, f, !teamInfo->FlagData.firstgrab);
 
 	player.flags[f] = false; // take scoring player's flag
 	teamInfo->FlagData.flagger = 0;
@@ -358,7 +355,7 @@ void CTF_RunTics (void)
 
 		CTF_SpawnFlag(teamInfo->Team);
 
-		M_LogWDLEvent(WDL_EVENT_RETURNFLAG, NULL, NULL, teamInfo->Team, 0, 0, 0);
+		M_LogWDLFlagReturn(NULL, teamInfo->Team);
 	}
 }
 

@@ -1016,11 +1016,9 @@ bool SV_SetupUserInfo(player_t &player)
 		{
 			// kill player if team is changed
 			P_DamageMobj(player.mo, 0, 0, 1000, 0);
-			M_LogWDLEvent(WDL_EVENT_DISCONNECT, &player, NULL, old_team,
-			              M_GetPlayerId(player, old_team), 0, 0);
-			M_LogWDLEvent(WDL_EVENT_JOINGAME, &player, NULL, player.userinfo.team,
-			              M_GetPlayerId(player, player.userinfo.team), 0,
-			              0);
+			M_LogWDLPlayerDisconnect(player, old_team, M_GetPlayerId(player, old_team));
+			M_LogWDLPlayerJoin(player, player.userinfo.team,
+			                   M_GetPlayerId(player, player.userinfo.team));
 			SV_BroadcastPrintFmt("{} switched to the {} team.\n",
 			                     player.userinfo.netname,
 			                     V_GetTeamColor(player.userinfo.team));
@@ -3351,10 +3349,8 @@ void SV_ChangeTeam (player_t &player)  // [Toke - Teams]
 	{
 		P_DamageMobj(player.mo, 0, 0, 1000, 0);
 
-		M_LogWDLEvent(WDL_EVENT_DISCONNECT, &player, NULL, old_team,
-		              M_GetPlayerId(player, old_team), 0, 0);
-		M_LogWDLEvent(WDL_EVENT_JOINGAME, &player, NULL, team, M_GetPlayerId(player, team), 0,
-		              0);
+		M_LogWDLPlayerDisconnect(player, old_team, M_GetPlayerId(player, old_team));
+		M_LogWDLPlayerJoin(player, team, M_GetPlayerId(player, team));
 	}
 	SV_BroadcastPrintFmt("{} has joined the {} team.\n", player.userinfo.netname,
 	                   V_GetTeamColor(team));
@@ -3502,8 +3498,8 @@ void SV_JoinPlayer(player_t& player, bool silent)
 			                     V_GetTeamColor(player.userinfo.team));
 	}
 
-	M_LogWDLEvent(WDL_EVENT_JOINGAME, &player, NULL, player.userinfo.team,
-	              M_GetPlayerId(player, player.userinfo.team), 0, 0);
+	M_LogWDLPlayerJoin(player, player.userinfo.team,
+	                   M_GetPlayerId(player, player.userinfo.team));
 }
 
 void SV_SpecPlayer(player_t &player, bool silent)

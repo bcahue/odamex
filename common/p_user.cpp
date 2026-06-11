@@ -1144,8 +1144,7 @@ void P_PlayerThink (player_t& player)
 	{
 		if (P_AtInterval(5))
 		{
-			M_LogWDLEvent(WDL_EVENT_PLAYERBEACON, &player, NULL, player.mo->angle / 4, 0,
-			              0, 0);
+			M_LogWDLPlayerBeacon(player, player.mo->angle / 4);
 		}
 	}
 }

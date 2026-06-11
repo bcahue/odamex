@@ -163,8 +163,7 @@ void P_SpawnPlayer(player_t& player, const mapthing2_t& mthing)
 		// Log the spawn
 		if (!player.spectator)
 		{
-			M_LogWDLEvent(WDL_EVENT_SPAWNPLAYER, &player, NULL, team, 0,
-			              M_GetPlayerSpawn(mthing.x, mthing.y), 0);
+			M_LogWDLPlayerSpawnEvent(player, team, M_GetPlayerSpawn(mthing.x, mthing.y));
 		}
 
 		// send new objects
