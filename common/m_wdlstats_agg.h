@@ -781,5 +781,10 @@ class WDLAggGame
 
 // Bridge: assemble a finished GameV6 from the recorder's current in-memory
 // tables + match metadata (level/levelstate/cvars + wad hashes). Implemented in
-// m_wdlstats.cpp, which owns those tables. Consumed by the server serializer.
+// m_wdlstats.cpp, which owns those tables.
 WDLGameV6 M_BuildWDLGameV6();
+
+// Serialize the current/just-finished match (M_BuildWDLGameV6) to the v6 JSON
+// string, or "" if nothing was recorded. Implemented in m_wdlstats_json.cpp.
+// Used by both the on-disk parity dump and the server upload path.
+std::string M_GetWDLStatsV6Json();

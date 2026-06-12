@@ -1370,11 +1370,31 @@ void M_CommitWDLLog()
 
 	fclose(fh);
 
+	PrintFmt(PRINT_HIGH, "wdlstats: Log saved as \"{}\".\n", filename);
+
+	// Dump the compiled v6 JSON next to the .log (wdl_<timestamp>.json) so the two
+	// can be diffed for parity. Built from the same in-memory state, while it's
+	// still valid (before recording is turned off below).
+	const std::string json = M_GetWDLStatsV6Json();
+	if (!json.empty())
+	{
+		const std::string jsonpath = ::wdlstate.logdir + "wdl_" + timestamp + ".json";
+		FILE* jh = fopen(jsonpath.c_str(), "w");
+		if (jh != NULL)
+		{
+			fwrite(json.data(), 1, json.size(), jh);
+			fclose(jh);
+			PrintFmt(PRINT_HIGH, "wdlstats: v6 JSON saved as \"{}\".\n", jsonpath);
+		}
+		else
+		{
+			PrintFmt(PRINT_HIGH, "wdlstats: Could not save \"{}\" for writing.\n", jsonpath);
+		}
+	}
+
 	// Turn off stat recording global - it must be turned on again by the
 	// log starter next go-around.
 	::wdlstate.recording = false;
-
-	PrintFmt(PRINT_HIGH, "wdlstats: Log saved as \"{}\".\n", filename);
 }
 
 // Assemble a finished GameV6 from the recorder's current in-memory tables plus
