@@ -28,6 +28,9 @@
 
 #include "sv_stats.h"
 
+#include <cstdint>
+#include <ctime>
+
 #include "m_wdlstats_agg.h"
 #include "sv_apiclient.h"
 
@@ -36,15 +39,22 @@ std::string SV_SerializeMatchStats()
 	return M_GetWDLStatsV6Json();
 }
 
-void SV_UploadMatchStats()
+void SV_UploadMatchStats(int durationTics)
 {
-	// TODO(S6): wire this into the match-end / intermission path and upload off
-	// the event worker thread. For now it is not called from anywhere.
 	std::string blob = SV_SerializeMatchStats();
 	if (blob.empty())
 		return;
 
-	SV_ApiUploadMatchStats(blob);
+	// The commit fires at match end, so "now" is the end of the match window and
+	// the start is the recorded duration earlier.
+	int durationSecs = durationTics / TICRATE;
+	if (durationSecs < 1)
+		durationSecs = 1;
+
+	int64_t endedAt = static_cast<int64_t>(time(NULL));
+	int64_t startedAt = endedAt - durationSecs;
+
+	SV_ApiUploadMatchStats(blob, startedAt, endedAt);
 }
 
 VERSION_CONTROL (sv_stats_cpp, "$Id$")

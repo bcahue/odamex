@@ -40,15 +40,22 @@ void SV_ApiPostPlayerEvent(const std::string& sub, const std::string& jti,
                            const std::string& eventType, int64_t occurredAt,
                            const std::string& clientIp);
 
-// Upload a finished match's stats blob to the API (B7).
+// Upload a finished match's stats to the API (B7 / S6).
 //
-// SCAFFOLD: not yet implemented. The v1 stats schema is an opaque JSON blob,
-// so this takes the already-serialized body produced by the sv_stats serializer
-// (see SV_SerializeMatchStats). When implemented it will reuse the same service
-// token + worker thread as the event posts and POST to
+// statsPayloadJson is the already-serialized v6 GameV6 blob (see
+// SV_SerializeMatchStats); this wraps it in the SubmitMatchStatsCommand envelope
+// (serverId + match window) and spools it to disk (under the wdlstats log dir,
+// stats/unsent/) before queueing it for asynchronous delivery on the same worker
+// thread + service token as the event posts. The POST goes to
 //   {sv_auth_api_url}/api/GameServerStats/game-servers/stats
-// Currently a no-op pending the B7 design pass.
-void SV_ApiUploadMatchStats(const std::string& statsJson);
+// with `Authorization: Bearer <token>` and `Content-Type: application/json`.
+// On success the spooled file moves to sent/; on a permanent failure (4xx incl.
+// a 409 duplicate) to rejected/; a transient outage leaves it in unsent/ to be
+// retried later — so a restart never drops an upload. Returns immediately; no-op
+// when auth is disabled / the worker isn't running / the payload is empty /
+// the spool is unavailable. startedAtUnix / endedAtUnix are unix seconds.
+void SV_ApiUploadMatchStats(const std::string& statsPayloadJson, int64_t startedAtUnix,
+                            int64_t endedAtUnix);
 
 // Stops the worker thread (draining any in-flight queue best-effort) and
 // releases resources. Registered via atterm.

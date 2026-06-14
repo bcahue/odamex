@@ -34,6 +34,10 @@
 #include "p_local.h"
 #include "teaminfo.h"
 
+#ifdef SERVER_APP
+#include "sv_stats.h"
+#endif
+
 #define WDLSTATS_VERSION 6
 
 // Check if the player is currently carrying a flag.
@@ -1382,9 +1386,22 @@ void M_CommitWDLLog()
 		}
 	}
 
+#ifdef SERVER_APP
+	// Upload the finished match to the API. Serialized here on the main thread
+	// while the recorder's tables + live game are still valid; the upload itself
+	// is handed off to the API worker thread so the game loop never blocks on
+	// network I/O.
+	SV_UploadMatchStats(::gametic - ::wdlstate.begintic);
+#endif
+
 	// Turn off stat recording global - it must be turned on again by the
 	// log starter next go-around.
 	::wdlstate.recording = false;
+}
+
+const std::string& M_GetWDLLogDir()
+{
+	return ::wdlstate.logdir;
 }
 
 // Assemble a finished GameV6 from the recorder's current in-memory tables plus

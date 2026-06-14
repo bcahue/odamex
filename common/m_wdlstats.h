@@ -237,4 +237,8 @@ int M_GetPlayerSpawn(int x, int y);
 void M_HandleWDLNameChange(team_t team, std::string oldname, std::string newname, int netid);
 int GetMaxShotsForMod(int mod);
 void M_CommitWDLLog();
+// The directory the `wdlstats <dir>` console command set logging to (with a
+// trailing path separator), or "" if logging isn't enabled. Also used as the
+// root for the durable match-stats upload spool.
+const std::string& M_GetWDLLogDir();
 WDLPowerups M_GetWDLItemByMobjType(const mobjtype_t type);
