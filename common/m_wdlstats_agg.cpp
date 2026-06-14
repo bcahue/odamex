@@ -28,14 +28,15 @@
 #include <unordered_map>
 #include <utility>
 
+#include "g_gametype.h"
+#include "p_local.h"
 #include "m_wdlstats_agg.h"
 
 namespace
 {
+// Pi constant, in protobreak (C++20) use
+// std::numbers:pi instead
 const double kPi = 3.14159265358979323846;
-// v6 Mods.SuperShotgun. The accuracy spread uses a wider cone for the SSG; we
-// compare the (engine) mod against the v6 value the legacy parser checked.
-const int kModSuperShotgunV6 = 11;
 } // namespace
 
 // Engine armortype (0=none, 1=green, 2=blue) -> v6 Armor enum.
@@ -57,20 +58,16 @@ WDLAggPlayer::WDLAggPlayer(const WDLPlayer& src)
 {
 }
 
-// §3 (B) native capture: there is no simulated health/armor/flag state here.
-// The dispatch passes ground truth (read off the live player_t when the event
-// was logged) straight into the handlers below.
+// Each piece of damage is folded into the
+// canonical stream the instant it is recorded. This allows
+// multiple damage events that fire on the same tic (like damage calculated per pellet)
+// to be aggregrated as part of the same record.
 
-// Fully immediate per-call (§3 (B)): each piece of damage is folded into the
-// canonical stream the instant it is recorded, applying the same same-tic merge
-// the recorder's LogDamageEvent applies (key: tic + damaged player + DAMAGE vs
-// CARRIERDAMAGE; environmental damage is never merged). Bucketing into the
-// categorized output lists happens later in RouteDamageOutput — that is pure
-// formatting, so no engine state is re-simulated here.
+// The merge key is (damagedId, damageType, enemyHadFlag) — that is, the same target.
 void WDLAggPlayer::AwardDamageToPlayer(int damagedId, const std::string& damagedName, int hp,
                                        int armor, WDLArmorV6 armorType, WDLDamageTypeV6 damageType,
                                        int mod, bool playerHasFlag, bool enemyHasFlag,
-                                       int ticsElapsed, int ax, int ay, int az, int tx, int ty,
+                                       int matchTic, int ax, int ay, int az, int tx, int ty,
                                        int tz)
 {
 	const bool isEnviro = (damageType == WDLDamageTypeV6::EnvironmentalDamage);
@@ -82,7 +79,7 @@ void WDLAggPlayer::AwardDamageToPlayer(int damagedId, const std::string& damaged
 	{
 		for (auto it = damageAll.rbegin(); it != damageAll.rend(); ++it)
 		{
-			if (it->gameTic != ticsElapsed)
+			if (it->gameTic != matchTic)
 				break;
 			if (it->damagedId == damagedId && it->damageType == damageType &&
 			    it->enemyHadFlag == enemyHasFlag)
@@ -98,14 +95,14 @@ void WDLAggPlayer::AwardDamageToPlayer(int damagedId, const std::string& damaged
 	{
 		WDLAggDamage dmg{damagedId, damagedName, mod, armorType, hp, armor,
 		                 ax,        ay,          az,  tx,        ty, tz,
-		                 ticsElapsed};
+		                 matchTic};
 		dmg.damageType = damageType;
 		dmg.playerHadFlag = playerHasFlag;
 		dmg.enemyHadFlag = enemyHasFlag;
 		damageAll.push_back(dmg);
 	}
 
-	// Touch->capture damage window is consumed live in AwardFlagCapture, so it has
+	// Touch -> capture damage window is consumed live in AwardFlagCapture, so it has
 	// to be maintained as damage happens — only damage dealt while carrying a flag
 	// to an enemy (the two "holding flag" output branches) counts toward it.
 	const bool holdingFlagOutput = playerHasFlag && !isEnviro &&
@@ -117,7 +114,7 @@ void WDLAggPlayer::AwardDamageToPlayer(int damagedId, const std::string& damaged
 		for (auto it = m_tempDamageOutputBetweenTouchAndCapture.rbegin();
 		     it != m_tempDamageOutputBetweenTouchAndCapture.rend(); ++it)
 		{
-			if (it->gameTic != ticsElapsed)
+			if (it->gameTic != matchTic)
 				break;
 			if (it->damagedId == damagedId && it->enemyHadFlag == enemyHasFlag)
 			{
@@ -131,7 +128,7 @@ void WDLAggPlayer::AwardDamageToPlayer(int damagedId, const std::string& damaged
 		{
 			WDLAggDamage dmg{damagedId, damagedName, mod, armorType, hp, armor,
 			                 ax,        ay,          az,  tx,        ty, tz,
-			                 ticsElapsed};
+			                 matchTic};
 			dmg.damageType = damageType;
 			dmg.playerHadFlag = playerHasFlag;
 			dmg.enemyHadFlag = enemyHasFlag;
@@ -142,7 +139,9 @@ void WDLAggPlayer::AwardDamageToPlayer(int damagedId, const std::string& damaged
 
 // Bucket the canonical damage stream into the categorized output lists. Mirrors
 // the original AwardDamageToPlayer routing exactly (minus the temp window, which
-// is maintained live). Run once, at FinalizeGame.
+// is maintained live).
+// 
+// Run once, at FinalizeGame.
 void WDLAggPlayer::RouteDamageOutput()
 {
 	for (const auto& dmg : damageAll)
@@ -198,10 +197,10 @@ void WDLAggPlayer::RouteDamageOutput()
 }
 
 void WDLAggPlayer::AwardKill(bool playerKilledHadFlag, bool fraggerHasFlag, bool isTeamKill, int mod,
-                            int ticsElapsed, int killedId, const std::string& killedName, int tx,
+                            int matchTic, int killedId, const std::string& killedName, int tx,
                             int ty, int tz, int ax, int ay, int az)
 {
-	WDLAggKill kill{mod, killedId, killedName, tx, ty, tz, ax, ay, az, ticsElapsed};
+	WDLAggKill kill{mod, killedId, killedName, tx, ty, tz, ax, ay, az, matchTic};
 
 	// Team kills count toward neither sprees nor multi-kills.
 	if (isTeamKill)
@@ -212,36 +211,33 @@ void WDLAggPlayer::AwardKill(bool playerKilledHadFlag, bool fraggerHasFlag, bool
 	{
 		carrierKillList.push_back(kill);
 		killList.push_back(kill);
-		HandleMultiKillAndSpree(ticsElapsed);
+		HandleMultiKillAndSpree(matchTic);
 	}
 	else if (playerKilledHadFlag && fraggerHasFlag)
 	{
 		carrierKillListWithFlagInHand.push_back(kill);
 		carrierKillList.push_back(kill);
 		killList.push_back(kill);
-		HandleMultiKillAndSpree(ticsElapsed);
+		HandleMultiKillAndSpree(matchTic);
 		m_currentKillsWhileHoldingFlag++;
 	}
 	else if (!playerKilledHadFlag && !fraggerHasFlag)
 	{
 		killList.push_back(kill);
-		HandleMultiKillAndSpree(ticsElapsed);
+		HandleMultiKillAndSpree(matchTic);
 	}
 	else if (!playerKilledHadFlag && fraggerHasFlag)
 	{
 		killList.push_back(kill);
 		killListWithFlagInHand.push_back(kill);
-		HandleMultiKillAndSpree(ticsElapsed);
+		HandleMultiKillAndSpree(matchTic);
 		m_currentKillsWhileHoldingFlag++;
 	}
 }
 
-void WDLAggPlayer::PlayerKilled(int ticsElapsed, WDLDeathTypeV6 deathType, int weaponMod,
+void WDLAggPlayer::PlayerKilled(int matchTic, WDLDeathTypeV6 deathType, int weaponMod,
                                 bool hadFlag, int x, int y, int z)
 {
-	// Mods.Slime (13) is the weapon the legacy parser records for environmental deaths.
-	const int kModSlime = 13;
-
 	switch (deathType)
 	{
 	case WDLDeathTypeV6::Environmental:
@@ -250,14 +246,14 @@ void WDLAggPlayer::PlayerKilled(int ticsElapsed, WDLDeathTypeV6 deathType, int w
 			totalDeaths++;
 			environmentalFlagCarrierDeaths++;
 			environmentalDeathWithFlag.push_back(
-			    WDLAggKill{kModSlime, id, name, x, y, z, 0, 0, 0, ticsElapsed});
+			    WDLAggKill{MOD_SLIME, id, name, x, y, z, 0, 0, 0, matchTic});
 		}
 		else
 		{
 			totalDeaths++;
 			environmentalDeaths++;
 			environmentalDeath.push_back(
-			    WDLAggKill{kModSlime, id, name, x, y, z, 0, 0, 0, ticsElapsed});
+			    WDLAggKill{MOD_SLIME, id, name, x, y, z, 0, 0, 0, matchTic});
 		}
 		break;
 
@@ -280,13 +276,13 @@ void WDLAggPlayer::PlayerKilled(int ticsElapsed, WDLDeathTypeV6 deathType, int w
 			totalDeaths++;
 			suicidesWithFlag++;
 			selfKillListWithFlag.push_back(
-			    WDLAggKill{weaponMod, id, name, x, y, z, 0, 0, 0, ticsElapsed});
+			    WDLAggKill{weaponMod, id, name, x, y, z, 0, 0, 0, matchTic});
 		}
 		else
 		{
 			totalDeaths++;
 			suicides++;
-			selfKillList.push_back(WDLAggKill{weaponMod, id, name, x, y, z, 0, 0, 0, ticsElapsed});
+			selfKillList.push_back(WDLAggKill{weaponMod, id, name, x, y, z, 0, 0, 0, matchTic});
 		}
 		break;
 	}
@@ -295,53 +291,42 @@ void WDLAggPlayer::PlayerKilled(int ticsElapsed, WDLDeathTypeV6 deathType, int w
 		longestSpree = m_consecutiveKills;
 
 	// Reset per-life derived state (no engine state to reset under native capture).
-	m_isPickupTouch = false;
 	m_consecutiveKills = 0;
 	m_multiKillCounter = 0;
 	m_currentKillsWhileHoldingFlag = 0;
 	m_tempDamageOutputBetweenTouchAndCapture.clear();
-	m_hasCurrentFlagTouch = false;
 }
 
-void WDLAggPlayer::PlayerTouchedFlag(WDLFlagTouchTypeV6 touchType, int ticsElapsed, int touchHp,
+void WDLAggPlayer::PlayerTouchedFlag(WDLFlagTouchTypeV6 touchType, int matchTic, int touchHp,
                                      int touchArmor, WDLArmorV6 touchArmorType, int ax, int ay,
                                      int az)
 {
-	if (touchType == WDLFlagTouchTypeV6::PickupFlagTouch)
-		m_isPickupTouch = true;
-
-	WDLAggFlagTouch touch{touchHp, touchArmorType, touchType, touchArmor, ticsElapsed, ax, ay, az};
+	WDLAggFlagTouch touch{touchHp, touchArmorType, touchType, touchArmor, matchTic, ax, ay, az};
 
 	if (touchType != WDLFlagTouchTypeV6::CarryReturnFlagTouch)
 	{
 		m_currentFlagTouch = touch;
-		m_hasCurrentFlagTouch = true;
 		totalFlagTouches.push_back(touch);
 	}
 	else
 	{
 		totalReturnFlagTouches.push_back(touch);
 	}
-
-	if (m_isPickupTouch)
-		m_lastPickupTouchGameTic = ticsElapsed;
-	else
-		m_lastTouchGameTic = ticsElapsed;
 }
 
-void WDLAggPlayer::AwardFlagCapture(int ticsElapsed, bool isPickupCapture, int captureHp,
+void WDLAggPlayer::AwardFlagCapture(int matchTic, bool isPickupCapture, int captureHp,
                                     int captureArmor, WDLArmorV6 captureArmorType, int fx, int fy,
                                     int fz)
 {
-	const int duration = isPickupCapture ? ticsElapsed - m_lastPickupTouchGameTic
-	                                      : ticsElapsed - m_lastTouchGameTic;
+	// m_currentFlagTouch could be null in some bizarro edge case.
+	// I'd rather crash us here to find out why that'd be the case.
+	const int duration = matchTic - m_currentFlagTouch.gameTic;
 
-	WDLAggCapture cap{ticsElapsed,
+	WDLAggCapture cap{matchTic,
 	                  duration,
 	                  captureHp,
 	                  captureArmorType,
 	                  captureArmor,
-	                  m_hasCurrentFlagTouch,
 	                  m_currentFlagTouch,
 	                  fx,
 	                  fy,
@@ -352,8 +337,8 @@ void WDLAggPlayer::AwardFlagCapture(int ticsElapsed, bool isPickupCapture, int c
 	else
 		captureList.push_back(cap);
 
-	// Native "captured while boosted": ground-truth >100 HP or blue armor at the
-	// moment of capture (replaces the parser's UnderEffectsOfPowerPickup sim).
+	// This could technically enable a player with a single health bonus over
+	// 100hp to count as a "super pickup" capture, but that's faithful to the original
 	if (captureHp > 100 || captureArmorType == WDLArmorV6::BlueArmor)
 		capturesWithSuperPickups++;
 
@@ -368,39 +353,30 @@ void WDLAggPlayer::AwardFlagCapture(int ticsElapsed, bool isPickupCapture, int c
 	}
 	damageOutputBetweenTouchAndCaptureNumberList.push_back(tempSum);
 
-	if (m_hasCurrentFlagTouch)
-		flagTouchesThatResultedInCapture.push_back(m_currentFlagTouch);
+	flagTouchesThatResultedInCapture.push_back(m_currentFlagTouch);
 
 	// reset flag-touch correlation state
-	m_lastTouchGameTic = 0;
-	m_lastPickupTouchGameTic = 0;
 	m_tempDamageOutputBetweenTouchAndCapture.clear();
 	m_currentKillsWhileHoldingFlag = 0;
-	m_hasCurrentFlagTouch = false;
 }
 
-void WDLAggPlayer::AwardFlagReturn(int ax, int ay, int az, int ticsElapsed)
+void WDLAggPlayer::AwardFlagReturn(int ax, int ay, int az, int matchTic)
 {
 	flagReturns++;
-	flagReturnEvents.push_back(WDLAggFlagReturnRec{ticsElapsed, ax, ay, az});
+	flagReturnEvents.push_back(WDLAggFlagReturnRec{matchTic, ax, ay, az});
 }
 
-void WDLAggPlayer::AwardPickup(int pickupType, int itemId, bool dropped, int ticsElapsed,
+void WDLAggPlayer::AwardPickup(int pickupType, int itemId, bool dropped, int matchTic,
                               int healthGained)
 {
-	pickupsList.push_back(WDLAggPickupRec{pickupType, itemId, dropped, ticsElapsed});
+	pickupsList.push_back(WDLAggPickupRec{pickupType, itemId, dropped, matchTic});
 
-	// totalPowerPickups counts the "power" set the parser counted (soulsphere /
-	// megasphere / blue armor / berserk). Derived from type — no health sim.
 	if (pickupType == WDL_PICKUP_SOULSPHERE || pickupType == WDL_PICKUP_MEGASPHERE ||
 	    pickupType == WDL_PICKUP_BLUEARMOR || pickupType == WDL_PICKUP_BERSERK)
 	{
 		totalPowerPickups++;
 	}
 
-	// Health awarded by this pickup is engine ground truth (the delta captured at
-	// log time). Split power vs non-power exactly as the parser bucketed them:
-	// power health = soulsphere/megasphere/berserk; non-power = stim/medkit/bonus.
 	if (pickupType == WDL_PICKUP_SOULSPHERE || pickupType == WDL_PICKUP_MEGASPHERE ||
 	    pickupType == WDL_PICKUP_BERSERK)
 	{
@@ -416,8 +392,10 @@ void WDLAggPlayer::AwardPickup(int pickupType, int itemId, bool dropped, int tic
 namespace
 {
 // Cone-trig for one hitscan accuracy record (extracted so a live hit can re-run
-// it on the accumulated shot count). Faithful port of the legacy parser; the
-// integer division feeding atan is intentional, not a bug.
+// it on the accumulated shot count).
+
+// In v7, cast standardized_x/y to double and use atan2 to simplify the trig and eliminate
+// NaN edge cases.
 WDLAggAccuracy ComputeHitscanAcc(int mod, unsigned hitsOnTarget, unsigned maxShots, int targetId,
                                  int angleBits, int ax, int ay, int az, int tx, int ty, int tz,
                                  int tic)
@@ -460,7 +438,7 @@ WDLAggAccuracy ComputeHitscanAcc(int mod, unsigned hitsOnTarget, unsigned maxSho
 		d = 0.0;
 
 	const double factor =
-	    (mod == kModSuperShotgunV6) ? WDL_ANGLE_SSG_FACTOR : WDL_ANGLE_NONSSG_FACTOR;
+	    (mod == MOD_SSHOTGUN) ? WDL_ANGLE_SSG_FACTOR : WDL_ANGLE_NONSSG_FACTOR;
 	const double top_spread_y = (factor * d) + 16.0;
 	const double top_aim_y = std::tan(angle_diff) * d;
 
@@ -505,8 +483,7 @@ WDLAggAccuracy ComputeHitscanAcc(int mod, unsigned hitsOnTarget, unsigned maxSho
 // Fold one accuracy piece into a player's canonical accuracy stream, applying
 // the same same-tic shot/hit merge the recorder's LogAccuracyShot/LogAccuracyHit
 // apply: the first shot for a (tic, weapon) creates the record, and subsequent
-// hits accumulate into it (re-running the trig on the running hit total). Both
-// the per-piece live path and the pre-merged batch path land on the same record.
+// hits accumulate into it (re-running the trig on the running hit total).
 void MergeAccuracy(std::vector<WDLAggAccuracy>& list, bool hitscan, unsigned hits,
                    unsigned maxShots, int targetId, team_t enemyTeam, int angleBits, int ax, int ay,
                    int az, int tx, int ty, int tz, int mod, int tic, bool hasFlag)
@@ -527,7 +504,7 @@ void MergeAccuracy(std::vector<WDLAggAccuracy>& list, bool hitscan, unsigned hit
 
 	if (hits == 0)
 	{
-		// Shot attempt: dedupe per (tic, weapon), mirroring LogAccuracyShot.
+		// Shot attempt: dedupe per (tic, weapon).
 		for (auto it = list.rbegin(); it != list.rend(); ++it)
 		{
 			if (it->gameTic != tic)
@@ -566,35 +543,35 @@ void MergeAccuracy(std::vector<WDLAggAccuracy>& list, bool hitscan, unsigned hit
 
 void WDLAggPlayer::RecordHitscanAccuracy(unsigned hitsOnTarget, unsigned maxShots, int targetId,
                                          team_t enemyTeam, int angleBits, int ax, int ay, int az,
-                                         int tx, int ty, int tz, int mod, int ticsElapsed,
+                                         int tx, int ty, int tz, int mod, int matchTic,
                                          bool hasFlag)
 {
 	MergeAccuracy(accuracyAll, true, hitsOnTarget, maxShots, targetId, enemyTeam, angleBits, ax, ay,
-	              az, tx, ty, tz, mod, ticsElapsed, hasFlag);
+	              az, tx, ty, tz, mod, matchTic, hasFlag);
 }
 
 void WDLAggPlayer::RecordProjectileAccuracy(unsigned hitsOnTarget, unsigned maxShots, int targetId,
                                             team_t enemyTeam, int angleBits, int ax, int ay, int az,
-                                            int tx, int ty, int tz, int mod, int ticsElapsed,
+                                            int tx, int ty, int tz, int mod, int matchTic,
                                             bool hasFlag)
 {
 	MergeAccuracy(accuracyAll, false, hitsOnTarget, maxShots, targetId, enemyTeam, angleBits, ax, ay,
-	              az, tx, ty, tz, mod, ticsElapsed, hasFlag);
+	              az, tx, ty, tz, mod, matchTic, hasFlag);
 }
 
 void WDLAggPlayer::RecordTracerAccuracy(unsigned hitsOnTarget, unsigned maxShots, int targetId,
                                         team_t enemyTeam, int angleBits, int ax, int ay, int az,
-                                        int tx, int ty, int tz, int mod, int ticsElapsed,
+                                        int tx, int ty, int tz, int mod, int matchTic,
                                         bool hasFlag)
 {
 	MergeAccuracy(accuracyAll, false, hitsOnTarget, maxShots, targetId, enemyTeam, angleBits, ax, ay,
-	              az, tx, ty, tz, mod, ticsElapsed, hasFlag);
+	              az, tx, ty, tz, mod, matchTic, hasFlag);
 }
 
 void WDLAggPlayer::RouteAccuracy(const WDLAggAccuracy& acc, team_t enemyTeam, unsigned hits,
                                  WDLGameTypeV6 gameType, bool hasFlag)
 {
-	// Accuracy is only bucketed for team games, matching the parser.
+	// Accuracy is only bucketed for team games in v6.
 	if (gameType != WDLGameTypeV6::TeamDeathmatch && gameType != WDLGameTypeV6::CaptureTheFlag)
 		return;
 
@@ -629,21 +606,21 @@ void WDLAggPlayer::RouteAccuracy(const WDLAggAccuracy& acc, team_t enemyTeam, un
 	}
 }
 
-void WDLAggPlayer::RecordPlayerSpawn(int spawnId, int ticsElapsed)
+void WDLAggPlayer::RecordPlayerSpawn(int spawnId, int matchTic)
 {
-	playerSpawns.push_back(WDLAggSpawnRec{spawnId, ticsElapsed});
+	playerSpawns.push_back(WDLAggSpawnRec{spawnId, matchTic});
 }
 
 void WDLAggPlayer::RecordPlayerBeacon(int /*angleBits*/, int /*ax*/, int /*ay*/, int /*az*/,
-                                      int /*ticsElapsed*/)
+                                      int /*matchTic*/)
 {
-	// TODO(S4e): beacon list (replay/realtime aux data).
+	// TODO: beacon list (replay/realtime aux data).
 }
 
-void WDLAggPlayer::RecordProjectileFire(int angleBits, int ticsElapsed, int mod, int ax, int ay,
+void WDLAggPlayer::RecordProjectileFire(int angleBits, int matchTic, int mod, int ax, int ay,
                                         int az)
 {
-	projectileFires.push_back(WDLAggProjFire{angleBits, mod, ax, ay, az, ticsElapsed});
+	projectileFires.push_back(WDLAggProjFire{angleBits, mod, ax, ay, az, matchTic});
 }
 
 void WDLAggPlayer::FinalizeGame(WDLGameTypeV6 gameType)
@@ -701,7 +678,7 @@ std::vector<WDLAggAssistTouch>& WDLAggGame::AssistStackFor(team_t team)
 		return m_blueAssists;
 	if (team == TEAM_RED)
 		return m_redAssists;
-	return m_greenAssists; // TEAM_GREEN (mirrors the parser's else branch)
+	return m_greenAssists;
 }
 
 void WDLAggGame::SyncPlayers(const WDLPlayers& players)
@@ -709,13 +686,11 @@ void WDLAggGame::SyncPlayers(const WDLPlayers& players)
 	// Live path: the recorder's player table is append-only (id == index + 1), so
 	// just add any entries we haven't seen yet, applying the same team
 	// normalization AddPlayers does for non-team games.
-	const bool teamGame =
-	    m_gameType == WDLGameTypeV6::TeamDeathmatch || m_gameType == WDLGameTypeV6::CaptureTheFlag;
 
 	for (size_t i = m_players.size(); i < players.size(); i++)
 	{
 		m_players.emplace_back(players[i]);
-		if (!teamGame)
+		if (!G_IsTeamGame())
 			m_players.back().team = TEAM_NONE;
 	}
 }
@@ -728,8 +703,8 @@ void WDLAggGame::Finalize()
 
 // Cross-player CTF flag-touch handling. The per-team assist stack lives on the
 // game (a touch starts/extends the chain), so this can't be a plain per-player
-// award. Called from the recorder's sv_ctf touch sites with live ground truth.
-void WDLAggGame::OnFlagTouch(WDLAggPlayer* activator, WDLFlagTouchTypeV6 touchType, int ticsElapsed,
+// award.
+void WDLAggGame::OnFlagTouch(WDLAggPlayer* activator, WDLFlagTouchTypeV6 touchType, int matchTic,
                             int hp, int armor, WDLArmorV6 armorType, int ax, int ay, int az)
 {
 	if (activator == nullptr)
@@ -740,34 +715,35 @@ void WDLAggGame::OnFlagTouch(WDLAggPlayer* activator, WDLFlagTouchTypeV6 touchTy
 		// A fresh flag touch resets the team's assist chain.
 		std::vector<WDLAggAssistTouch>& stack = AssistStackFor(activator->team);
 		stack.clear();
-		stack.push_back(WDLAggAssistTouch{ticsElapsed, activator->id, activator->name});
+		stack.push_back(WDLAggAssistTouch{matchTic, activator->id, activator->name});
 	}
 	else if (touchType == WDLFlagTouchTypeV6::PickupFlagTouch)
 	{
 		// A pickup touch extends the chain (potential assister).
 		AssistStackFor(activator->team)
-		    .push_back(WDLAggAssistTouch{ticsElapsed, activator->id, activator->name});
+		    .push_back(WDLAggAssistTouch{matchTic, activator->id, activator->name});
 	}
 
-	activator->PlayerTouchedFlag(touchType, ticsElapsed, hp, armor, armorType, ax, ay, az);
+	activator->PlayerTouchedFlag(touchType, matchTic, hp, armor, armorType, ax, ay, az);
 }
 
 // Cross-player CTF capture handling: awards the capture to the player, snapshots
 // the assist chain into the capture table, and (for pickup captures) credits the
 // assisters and resets the chain.
-void WDLAggGame::OnFlagCapture(WDLAggPlayer* activator, bool isPickupCapture, int ticsElapsed,
+void WDLAggGame::OnFlagCapture(WDLAggPlayer* activator, bool isPickupCapture, int matchTic,
                               int hp, int armor, WDLArmorV6 armorType, int fx, int fy, int fz)
 {
 	if (activator == nullptr)
 		return;
 
-	activator->AwardFlagCapture(ticsElapsed, isPickupCapture, hp, armor, armorType, fx, fy, fz);
+	activator->AwardFlagCapture(matchTic, isPickupCapture, hp, armor, armorType, fx, fy,
+	                            fz);
 
 	// Snapshot the assist chain (top-of-stack first, as Stack.ToList()) into the
 	// capture table before any popping.
 	std::vector<WDLAggAssistTouch>& stack = AssistStackFor(activator->team);
 	WDLAggFlagCaptureEntry entry;
-	entry.captureTic = ticsElapsed;
+	entry.captureTic = matchTic;
 	entry.team = activator->team;
 	for (auto it = stack.rbegin(); it != stack.rend(); ++it)
 		entry.assists.push_back(*it);
@@ -797,7 +773,7 @@ void WDLAggGame::OnFlagCapture(WDLAggPlayer* activator, bool isPickupCapture, in
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Assembly (S4e) — port of GameV6 + PlayerStatsV6 + TeamStatsV6 + the views.
+// Assembly
 // ---------------------------------------------------------------------------
 
 namespace

@@ -26,6 +26,7 @@
 #include "odamex.h"
 
 #include "g_levelstate.h"
+#include "g_gametype.h"
 #include "m_wdlstats.h"
 #include "m_wdlstats_agg.h"
 
@@ -1014,7 +1015,7 @@ void M_LogWDLPlayerDamage(AActor* source, AActor* target, int hp, int armor, int
 	}
 	else
 	{
-		const WDLDamageTypeV6 dt = (::g_liveGame.IsTeamGame() && aAgg->team == tAgg->team)
+		const WDLDamageTypeV6 dt = (G_IsTeamGame() && aAgg->team == tAgg->team)
 		                               ? WDLDamageTypeV6::DamageByTeammate
 		                               : WDLDamageTypeV6::DamageByEnemyPlayer;
 		aAgg->AwardDamageToPlayer(tAgg->id, tAgg->name, hp, armor, targetArmor, dt, mod,
@@ -1071,7 +1072,7 @@ void M_LogWDLPlayerKill(AActor* source, AActor* target, int mod, bool targetHasF
 		deathType = WDLDeathTypeV6::Suicide;
 	else
 	{
-		const bool isTeamKill = ::g_liveGame.IsTeamGame() && aAgg->team == tAgg->team;
+		const bool isTeamKill = G_IsTeamGame() && aAgg->team == tAgg->team;
 		deathType = WDLDeathTypeV6::KilledByPlayer;
 		aAgg->AwardKill(targetHasFlag, PlayerCarriesFlag(sp), isTeamKill, mod, tics, tAgg->id,
 		                tAgg->name, tx, ty, tz, ax, ay, az);

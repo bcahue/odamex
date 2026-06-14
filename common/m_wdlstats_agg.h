@@ -14,27 +14,16 @@
 // GNU General Public License for more details.
 //
 // DESCRIPTION:
-//   In-engine accumulation of WDLStats v6 (GameV6) stats. WDLAggGame /
-//   WDLAggPlayer are a passive data structure that the recorder (m_wdlstats.cpp)
-//   updates as the match is played: each event awards directly to the player(s)
-//   involved (no event-dispatch / re-parse, no end-of-match replay). Only the
-//   GameV6 *schema* is shared with WDLStatLogParserService — the C# parser is
-//   kept solely as a parity reference run over the same match's text log.
-//
-//   Output shapes (the JSON contract) live at the bottom of this header; the
-//   per-player award handlers and the GameV6 assembly are in the .cpp.
+//   In-engine accumulation of WDLStats v6 stats.
+//   We do this in order to avoid
 //
 //-----------------------------------------------------------------------------
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include "m_wdlstats.h"
 
-#include "m_wdlstats.h" // shared recording tables (WDLEvent, WDLPlayer, …)
-
-// v6 game type — mirrors LogFileEnumsV6.GameType (the wire contract). The caller
-// translates the engine's game mode into this when invoking the aggregator.
+// Supported game types in V6.
 enum class WDLGameTypeV6
 {
 	Coop = 0,
@@ -44,10 +33,7 @@ enum class WDLGameTypeV6
 	Horde = 4,
 };
 
-// Classifications derived during dispatch — mirror the v6 wire enums. (Mod and
-// pickup ids stay as engine-native ints in the aggregator and are cast to the
-// v6 Mods/Pickups enums at serialization time, exactly as the legacy parser
-// does; that is also where the known Pickups enum drift is reconciled.)
+// Enums to classify event types
 enum class WDLDamageTypeV6
 {
 	DamageByEnemyPlayer = 0,
@@ -77,18 +63,16 @@ enum class WDLArmorV6
 	BlueArmor = 2,
 };
 
-// Engine armortype (0=none, 1=green, 2=blue) -> v6 Armor enum. Used by the
-// recorder (m_wdlstats.cpp) when awarding stats from live engine state.
+// Engine armortype (0=none, 1=green, 2=blue) -> v6 Armor enum.
+// V7 should support DeHacked armor amounts (i.e. more than 200)
 WDLArmorV6 WDLMapArmorType(int armortype);
 
 // Multi-kill window: max tics between frags to still count toward a multi-kill
-// (ParserConstants.MaxMultiKillGameticDuration).
+// TODO: V7 should use the actual multi-kill setting defined by the WAD.
 static const int WDL_MAX_MULTIKILL_TICS = 35 * 3;
 
-// Intermediate per-event records the aggregator accumulates (ports of the
-// parser's Domain models). Coordinates are in the units the recorder stored
-// (passed through from apos/tpos). Mod/pickup ids stay engine-native here and
-// are cast to the v6 wire enums at serialization (S5).
+// Intermediate per-event records the aggregator accumulates.
+// Some state is carried in these records to avoid having to re-simulate it at finalzie time.
 struct WDLAggDamage
 {
 	int damagedId;
@@ -158,14 +142,14 @@ struct WDLAggProjFire
 	int gameTic;
 };
 
-// Accuracy cone-trig constants (ParserConstants). AngleFraction divides the
-// engine's integer angle into the 0..2π byte angle; the SSG/non-SSG factors set
+// Accuracy cone-trig constants. AngleFraction divides the
+// engine's integer angle into the 0..2*pi byte angle; the SSG/non-SSG factors set
 // the spread half-cone used to score a hit.
 static const double WDL_ANGLE_FRACTION = 1073741824.0;
 static const double WDL_ANGLE_SSG_FACTOR = 0.195476876 / 2;
 static const double WDL_ANGLE_NONSSG_FACTOR = 0.097738438 / 2;
 
-// CTF flag-lifecycle records (S4d).
+// CTF flag-lifecycle records.
 struct WDLAggFlagTouch
 {
 	int touchHp;
@@ -183,7 +167,6 @@ struct WDLAggCapture
 	int captureHp;
 	WDLArmorV6 captureArmorType;
 	int captureArmor;
-	bool hasFlagTouch; // false only on malformed input (parser would NRE)
 	WDLAggFlagTouch flagTouchResultingInCapture;
 	int ax, ay, az; // flag position
 };
@@ -201,8 +184,7 @@ struct WDLAggAssistTouch
 	std::string playerName;
 };
 
-// FlagCaptureTableV6: a capture plus its assist chain (top-of-stack first, as
-// the legacy parser's Stack.ToList() produced it).
+// FlagCaptureTableV6: a capture plus its assist chain (top-of-stack first).
 struct WDLAggFlagCaptureEntry
 {
 	int captureTic;
@@ -211,13 +193,7 @@ struct WDLAggFlagCaptureEntry
 };
 
 // ---------------------------------------------------------------------------
-// WDLAggPlayer — per-player aggregation state (port of PlayerV6).
-//
-// S4a established identity + the handler entry points the dispatch calls. S4b
-// (this chunk) fills in the non-CTF simulation: the health/armor replay model,
-// damage/kill/death lists, pickups, spawns, and spree/multi-kill tracking. The
-// flag-possession state exists here but is only driven once S4d wires the CTF
-// touch/capture handlers; accuracy lists are S4c.
+// WDLAggPlayer — per-player aggregation state
 // ---------------------------------------------------------------------------
 class WDLAggPlayer
 {
@@ -230,7 +206,7 @@ class WDLAggPlayer
 	team_t team;
 	std::string sub;  // Keycloak subject (empty for anon/bots)
 
-	// --- accumulated stats (S4b non-CTF; flag-tagged lists fill in via S4d) ---
+	// --- accumulated stats ---
 	// Canonical streams, populated live as events arrive (same-tic merge applied
 	// in place). The categorized output lists below are derived from these once at
 	// FinalizeGame — that is pure bucketing for output, not a re-simulation.
@@ -262,15 +238,15 @@ class WDLAggPlayer
 	// Pickups / spawns
 	std::vector<WDLAggPickupRec> pickupsList;
 	std::vector<WDLAggSpawnRec> playerSpawns;
-	// Accuracy lists (S4c). Only populated for team games (TDM/CTF), matching the
-	// parser. Teammate-accuracy lists are tracked for fidelity but unused by GameV6.
+	// Accuracy lists. Only populated for team games (TDM/CTF) in v6.
+	// Teammate-accuracy lists are tracked for fidelity but unused in v6.
 	std::vector<WDLAggAccuracy> accuracyList;
 	std::vector<WDLAggAccuracy> accuracyWithFlagList;
 	std::vector<WDLAggAccuracy> accuracyWithoutFlagList;
 	std::vector<WDLAggAccuracy> teammateAccuracyList;
 	std::vector<WDLAggAccuracy> teammateAccuracyWithFlagList;
 	std::vector<WDLAggProjFire> projectileFires;
-	// CTF flag lifecycle (S4d)
+	// CTF flag lifecycle
 	std::vector<WDLAggCapture> captureList;
 	std::vector<WDLAggCapture> pickupCaptureList;
 	std::vector<WDLAggFlagTouch> totalFlagTouches;
@@ -297,35 +273,37 @@ class WDLAggPlayer
 
 	// Award handlers — called by the recorder (m_wdlstats.cpp) as the match is
 	// played. Ground-truth values (armor type/amount, health, flag possession) are
-	// read off the live player_t at the event's source (§3 (B)); nothing here
-	// simulates engine state.
+	// read off the live player_t at the event's source; nothing here simulates engine state.
+	// However, some state may be kept for stat purposes that aren't recorded elsewhere.
+	// e.g. damage/kills between touch and capture.
 	void AwardDamageToPlayer(int damagedId, const std::string& damagedName, int hp, int armor,
 	                         WDLArmorV6 armorType, WDLDamageTypeV6 damageType, int mod,
-	                         bool selfHasFlag, bool targetHasFlag, int ticsElapsed, int ax, int ay,
+	                         bool selfHasFlag, bool targetHasFlag, int matchTic, int ax, int ay,
 	                         int az, int tx, int ty, int tz);
 	void AwardKill(bool playerKilledHadFlag, bool playerHadFlag, bool isTeamKill, int mod,
-	               int ticsElapsed, int killedId, const std::string& killedName, int tx, int ty,
+	               int matchTic, int killedId, const std::string& killedName, int tx, int ty,
 	               int tz, int ax, int ay, int az);
-	void PlayerKilled(int ticsElapsed, WDLDeathTypeV6 deathType, int weaponMod, bool hadFlag, int x,
+	void PlayerKilled(int matchTic, WDLDeathTypeV6 deathType, int weaponMod, bool hadFlag, int x,
 	                  int y, int z);
-	void PlayerTouchedFlag(WDLFlagTouchTypeV6 touchType, int ticsElapsed, int touchHp, int touchArmor,
+	void PlayerTouchedFlag(WDLFlagTouchTypeV6 touchType, int matchTic, int touchHp, int touchArmor,
 	                       WDLArmorV6 touchArmorType, int ax, int ay, int az);
-	void AwardFlagCapture(int ticsElapsed, bool isPickupCapture, int captureHp, int captureArmor,
+	void AwardFlagCapture(int matchTic, bool isPickupCapture, int captureHp,
+	                      int captureArmor,
 	                      WDLArmorV6 captureArmorType, int fx, int fy, int fz);
-	void AwardFlagReturn(int ax, int ay, int az, int ticsElapsed);
-	void AwardPickup(int pickupType, int itemId, bool dropped, int ticsElapsed, int healthGained);
+	void AwardFlagReturn(int ax, int ay, int az, int matchTic);
+	void AwardPickup(int pickupType, int itemId, bool dropped, int matchTic, int healthGained);
 	void RecordHitscanAccuracy(unsigned hitsOnTarget, unsigned maxShots, int targetId,
 	                           team_t enemyTeam, int angleBits, int ax, int ay, int az, int tx,
-	                           int ty, int tz, int mod, int ticsElapsed, bool hasFlag);
+	                           int ty, int tz, int mod, int matchTic, bool hasFlag);
 	void RecordProjectileAccuracy(unsigned hitsOnTarget, unsigned maxShots, int targetId,
 	                              team_t enemyTeam, int angleBits, int ax, int ay, int az, int tx,
-	                              int ty, int tz, int mod, int ticsElapsed, bool hasFlag);
+	                              int ty, int tz, int mod, int matchTic, bool hasFlag);
 	void RecordTracerAccuracy(unsigned hitsOnTarget, unsigned maxShots, int targetId,
 	                          team_t enemyTeam, int angleBits, int ax, int ay, int az, int tx,
-	                          int ty, int tz, int mod, int ticsElapsed, bool hasFlag);
-	void RecordPlayerSpawn(int spawnId, int ticsElapsed);
-	void RecordPlayerBeacon(int angleBits, int ax, int ay, int az, int ticsElapsed);
-	void RecordProjectileFire(int angleBits, int ticsElapsed, int mod, int ax, int ay, int az);
+	                          int ty, int tz, int mod, int matchTic, bool hasFlag);
+	void RecordPlayerSpawn(int spawnId, int matchTic);
+	void RecordPlayerBeacon(int angleBits, int ax, int ay, int az, int matchTic);
+	void RecordProjectileFire(int angleBits, int matchTic, int mod, int ax, int ay, int az);
 
 	// Close out anything still in flight at match end (sprees) and bucket the
 	// canonical damage/accuracy streams into the categorized output lists. Routing
@@ -342,28 +320,21 @@ class WDLAggPlayer
 	void RouteAccuracy(const WDLAggAccuracy& acc, team_t enemyTeam, unsigned hits,
 	                   WDLGameTypeV6 gameType, bool hasFlag);
 
-	// --- derived state only (NO simulated engine state, §3 (B)) ---
+	// --- derived state only ---
 	// Spree / multi-kill tracking, derived from the kill/death sequence.
 	int m_consecutiveKills = 0;
 	int m_multiKillCounter = 0;
 	int m_lastKillGameTic = 0;
-	// Touch→capture correlation, derived from the flag-touch sequence.
-	bool m_isPickupTouch = false;
+	// Touch -> capture correlation, derived from the flag-touch sequence.
 	int m_currentKillsWhileHoldingFlag = 0;
-	int m_lastTouchGameTic = 0;
-	int m_lastPickupTouchGameTic = 0;
 	// Damage dealt since the current flag touch; committed on capture.
 	std::vector<WDLAggDamage> m_tempDamageOutputBetweenTouchAndCapture;
 	// The in-flight flag touch that will become FlagTouchResultingInCapture.
-	bool m_hasCurrentFlagTouch = false;
 	WDLAggFlagTouch m_currentFlagTouch{};
 };
 
 // ===========================================================================
-// Output views — the assembled GameV6 shape (S4e). Field names mirror the v6
-// JSON contract (camelCase) so the S5 serializer maps 1:1. TimeSpan-typed
-// contract fields are stored as double total-seconds (computed exactly as the
-// parser does) and formatted by S5; Date is carried as the metadata's string.
+// Output views — the assembled WDLStatsV6 aggregrated stats, ready for serialization.
 // ===========================================================================
 
 struct WDLWadV6
@@ -686,8 +657,7 @@ struct WDLGameV6
 	std::vector<WDLGameEventsV6> gameEvents;
 };
 
-// Match metadata supplied by the recorder at assembly time (the header values
-// the legacy log carried). Pass-through into GameMetaDataV6.
+// Match metadata supplied by the recorder at assembly time.
 struct WDLAggMeta
 {
 	int version = 6;
@@ -707,10 +677,9 @@ struct WDLAggMeta
 
 // ---------------------------------------------------------------------------
 // WDLAggGame — whole-match stat accumulator. It is a passive data structure the
-// recorder (m_wdlstats.cpp) updates *as the match is played*: each M_Log* event
+// recorder (m_wdlstats.cpp) updates as the match is played: each M_Log* event
 // resolves the player(s) involved (PlayerByNetId) and calls the relevant award
-// handler directly. There is no event-dispatch / re-parse layer — the engine is
-// the state machine; this just records what it reports, then assembles GameV6.
+// handler directly.
 // ---------------------------------------------------------------------------
 class WDLAggGame
 {
@@ -724,23 +693,15 @@ class WDLAggGame
 	// id == index + 1) so events can resolve them as they arrive.
 	void SyncPlayers(const WDLPlayers& players);
 
-	// Resolve a player by engine netid. Mirrors the legacy parser's FirstOrDefault:
-	// the FIRST table entry with this netid (so reconnect/team-switch duplicates
-	// resolve the legacy v6 way), or nullptr. Called by the recorder per event.
+	// Resolve a player by engine netid.
 	WDLAggPlayer* PlayerByNetId(int netid);
-
-	bool IsTeamGame() const
-	{
-		return m_gameType == WDLGameTypeV6::TeamDeathmatch ||
-		       m_gameType == WDLGameTypeV6::CaptureTheFlag;
-	}
 
 	// Cross-player CTF handlers (the assist stacks and capture table live here, so
 	// these can't be plain per-player awards). Called from the recorder's flag
 	// touch/capture sites with ground truth read off the live player_t.
-	void OnFlagTouch(WDLAggPlayer* activator, WDLFlagTouchTypeV6 touchType, int ticsElapsed, int hp,
+	void OnFlagTouch(WDLAggPlayer* activator, WDLFlagTouchTypeV6 touchType, int matchTic, int hp,
 	                 int armor, WDLArmorV6 armorType, int ax, int ay, int az);
-	void OnFlagCapture(WDLAggPlayer* activator, bool isPickupCapture, int ticsElapsed, int hp,
+	void OnFlagCapture(WDLAggPlayer* activator, bool isPickupCapture, int matchTic, int hp,
 	                   int armor, WDLArmorV6 armorType, int fx, int fy, int fz);
 
 	// Close out per-player in-flight state and bucket the canonical streams into
@@ -748,13 +709,13 @@ class WDLAggGame
 	void Finalize();
 
 	// Assemble the finished GameV6 from the accumulated per-player state plus the
-	// match metadata and map tables supplied by the recorder (S4e).
+	// match metadata and map tables supplied by the recorder.
 	WDLGameV6 Build(const WDLAggMeta& meta, const WDLItemSpawns& itemSpawns,
 	                const WDLPlayerSpawns& playerSpawns, const WDLFlagLocations& flagLocations,
 	                const std::vector<WDLWadV6>& wads) const;
 
   private:
-	// --- assembly (S4e) ---
+	// --- assembly ---
 	void GenerateTeamStats(WDLGameV6& out) const;
 	void GeneratePlayerStats(WDLGameV6& out) const;
 	void GenerateKillDeaths(WDLGameV6& out) const;
@@ -763,7 +724,7 @@ class WDLAggGame
 	const WDLAggPlayer* FindByTableId(int tableId) const;
 	std::string NameForTableId(int tableId) const;
 
-	// The per-team assist stack for the given team (S4d).
+	// The per-team assist stack for the given team.
 	std::vector<WDLAggAssistTouch>& AssistStackFor(team_t team);
 
 	WDLGameTypeV6 m_gameType = WDLGameTypeV6::Coop;
@@ -771,7 +732,7 @@ class WDLAggGame
 	int m_endGameTic = 0;
 	std::vector<WDLAggPlayer> m_players;
 
-	// CTF assist tracking (S4d): per-team stacks of flag touches, popped/awarded
+	// CTF assist tracking: per-team stacks of flag touches, popped/awarded
 	// on capture, plus the assembled capture table.
 	std::vector<WDLAggAssistTouch> m_redAssists;
 	std::vector<WDLAggAssistTouch> m_blueAssists;
@@ -785,6 +746,5 @@ class WDLAggGame
 WDLGameV6 M_BuildWDLGameV6();
 
 // Serialize the current/just-finished match (M_BuildWDLGameV6) to the v6 JSON
-// string, or "" if nothing was recorded. Implemented in m_wdlstats_json.cpp.
-// Used by both the on-disk parity dump and the server upload path.
+// string, or "" if nothing was recorded.
 std::string M_GetWDLStatsV6Json();
