@@ -36,8 +36,7 @@
 
 #define WDLSTATS_VERSION 6
 
-// [auth] §3 (B) native capture: a player carries a flag iff they are some team's
-// recorded flagger. Read off live engine state when an event is logged.
+// Check if the player is currently carrying a flag.
 static bool PlayerCarriesFlag(const player_t* p)
 {
 	if (p == NULL)
@@ -138,12 +137,8 @@ auto inline format_as(const WDLEvent& ev)
 // Events that we're keeping track of.
 static WDLEventLog wdlevents;
 
-// [auth] §3 (B) the v6 game is compiled live, as part of normal game flow: each
-// M_Log* event below updates this accumulator directly at the source — there is
-// no event-dispatch / re-parse layer and no end-of-match replay. Reset to a fresh
-// game on each M_StartWDLLog; ::wdlstate.recording gates whether it is being fed.
-// (::wdlevents and the text-log writer are kept only so the C# parser can be run
-// over the same match for JSON parity comparison.)
+// Instance of the aggregrated game stat accumulator, which the recorder updates live and
+// the v6 aggregator consumes
 static WDLAggGame g_liveGame;
 
 // Resolve the live-game accumulator entry for a player, or NULL when not
@@ -533,10 +528,9 @@ void M_StartWDLLog(bool newmap)
 	::wdlstate.begintic = ::gametic;
 
 	// Spin up a fresh live aggregator for this match. Players are added lazily as
-	// they generate events (WDLAgg -> SyncPlayers). endGameTic is unknown until the
-	// match ends and is unused while accumulating, so pass 0.
+	// they generate events (WDLAgg -> SyncPlayers).
 	::g_liveGame = WDLAggGame(static_cast<WDLGameTypeV6>(::sv_gametype.asInt()),
-	                          ::wdlstate.begintic, 0);
+	                          ::wdlstate.begintic);
 
 	PrintFmt(PRINT_HIGH, "wdlstats: Started, will log to directory \"{}\".\n",
 	       wdlstate.logdir);
@@ -759,8 +753,6 @@ void M_LogWDLItemRespawnEvent(AActor* activator)
  * can ignore item pickups that only get picked up at the same location once if item
  * respawn is on.
  */
-// Pre-pickup health stashed by M_BeginWDLPickup, used to derive the heal delta
-// the next pickup event awarded (§3 (B) native capture).
 static int s_pickupPreHealth = 0;
 
 void M_BeginWDLPickup(int preHealth)
@@ -816,15 +808,12 @@ void M_LogWDLPickupEvent(const player_t* activator, AActor* target, WDLPowerups 
 			itemspawnid = GetItemSpawn(tx, ty, tz, pickuptype);
 	}
 
-	// [auth] §3 (B): award the pickup straight into the live game. The health it
-	// actually added is ground truth — post-pickup health minus the pre-pickup
-	// health stashed by M_BeginWDLPickup at the top of P_GiveSpecial.
 	WDLAggPlayer* a = WDLAgg(activator);
 	if (a != NULL)
 		a->AwardPickup(static_cast<int>(pickuptype), itemspawnid, dropped, WDLTics(),
 		               activator->health - s_pickupPreHealth);
 
-	// Text-log record (kept only for parser parity).
+	// Text-log record.
 	WDLEvent evt = {
 	    WDL_EVENT_PICKUPITEM, aid,        tid,         ::gametic, {ax, ay, az},
 	    {tx, ty, tz},         pickuptype, itemspawnid, dropitem,  0};
@@ -949,7 +938,7 @@ static void WDLAwardAccuracy(const player_t* shooter, const player_t* target, in
 // ===========================================================================
 // Typed WDL event API. The game calls these at the point each event happens;
 // each one awards the stat directly to the live game and records the text-log
-// line. (There is no generic enum funnel and no central dispatch.)
+// line.
 // ===========================================================================
 
 void M_LogWDLPlayerDamage(AActor* source, AActor* target, int hp, int armor, int mod,

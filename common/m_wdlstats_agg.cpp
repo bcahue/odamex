@@ -657,8 +657,8 @@ void WDLAggPlayer::HandleMultiKillAndSpree(int gameTic)
 // WDLAggGame
 // ---------------------------------------------------------------------------
 
-WDLAggGame::WDLAggGame(WDLGameTypeV6 gameType, int beginTic, int endGameTic)
-    : m_gameType(gameType), m_beginTic(beginTic), m_endGameTic(endGameTic)
+WDLAggGame::WDLAggGame(WDLGameTypeV6 gameType, int beginTic)
+    : m_gameType(gameType), m_beginTic(beginTic)
 {
 }
 

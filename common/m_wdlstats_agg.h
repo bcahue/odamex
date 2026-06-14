@@ -687,7 +687,7 @@ class WDLAggGame
 	// Default-constructed games are empty/inert; the recorder assigns a fresh one
 	// at match start (it is held as a plain static instance, gated by recording).
 	WDLAggGame() = default;
-	WDLAggGame(WDLGameTypeV6 gameType, int beginTic, int endGameTic);
+	WDLAggGame(WDLGameTypeV6 gameType, int beginTic);
 
 	// Append any newly-joined players from the recorder's table (append-only,
 	// id == index + 1) so events can resolve them as they arrive.
@@ -729,7 +729,6 @@ class WDLAggGame
 
 	WDLGameTypeV6 m_gameType = WDLGameTypeV6::Coop;
 	int m_beginTic = 0;
-	int m_endGameTic = 0;
 	std::vector<WDLAggPlayer> m_players;
 
 	// CTF assist tracking: per-team stacks of flag touches, popped/awarded
