@@ -84,6 +84,11 @@ int GetInt(const struct mg_str& j, const char* path)
 {
 	return (int)mg_json_get_long(j, path, 0);
 }
+
+long long GetLong(const struct mg_str& j, const char* path)
+{
+	return (long long)mg_json_get_long(j, path, 0);
+}
 } // namespace
 
 PartyClient::PartyClient(std::string apiBaseUrl,
@@ -159,6 +164,38 @@ void PartyClient::SetOnSessionEvicted(std::function<void(const SessionEvicted&)>
 {
 	m_onSessionEvicted = std::move(h);
 }
+void PartyClient::SetOnGlobalMessage(std::function<void(const GlobalChatMessage&)> h)
+{
+	m_onGlobalMessage = std::move(h);
+}
+void PartyClient::SetOnGlobalMessageDeleted(std::function<void(const std::string&)> h)
+{
+	m_onGlobalMessageDeleted = std::move(h);
+}
+void PartyClient::SetOnGlobalChatState(std::function<void(int)> h)
+{
+	m_onGlobalChatState = std::move(h);
+}
+void PartyClient::SetOnFriendRequest(std::function<void(const FriendRequestEvent&)> h)
+{
+	m_onFriendRequest = std::move(h);
+}
+void PartyClient::SetOnFriendAdded(std::function<void(const std::string&)> h)
+{
+	m_onFriendAdded = std::move(h);
+}
+void PartyClient::SetOnFriendRemoved(std::function<void(const std::string&)> h)
+{
+	m_onFriendRemoved = std::move(h);
+}
+void PartyClient::SetOnFriendRequestResolved(std::function<void(long long, bool)> h)
+{
+	m_onFriendRequestResolved = std::move(h);
+}
+void PartyClient::SetOnFriendPresenceChanged(std::function<void(const FriendPresence&)> h)
+{
+	m_onFriendPresenceChanged = std::move(h);
+}
 
 // ---- hub methods ----
 //
@@ -211,6 +248,11 @@ void PartyClient::Kick(const std::string& targetSubject, ResultHandler cb)
 void PartyClient::PromoteLeader(const std::string& newLeaderSubject, ResultHandler cb)
 {
 	m_signalr->Invoke("PromoteLeader", Args1(newLeaderSubject), std::move(cb));
+}
+
+void PartyClient::SendGlobalMessage(const std::string& text, ResultHandler cb)
+{
+	m_signalr->Invoke("SendGlobalMessage", Args1(text), std::move(cb));
 }
 
 // ---- event dispatch ----
@@ -305,5 +347,68 @@ void PartyClient::Dispatch(const std::string& target, const std::string& args)
 		e.newServerId = GetInt(j, "$[0].newServerId");
 		e.evictedTicketJti = GetStr(j, "$[0].evictedTicketJti");
 		m_onSessionEvicted(e);
+	}
+	else if (target == "GlobalMessageReceived")
+	{
+		if (!m_onGlobalMessage)
+			return;
+		GlobalChatMessage m;
+		m.messageId = GetStr(j, "$[0].messageId");
+		m.authorSubject = GetStr(j, "$[0].authorSubject");
+		m.authorUsername = GetStr(j, "$[0].authorUsername");
+		m.text = GetStr(j, "$[0].text");
+		m.sentAt = GetStr(j, "$[0].sentAt");
+		m_onGlobalMessage(m);
+	}
+	else if (target == "GlobalMessageDeleted")
+	{
+		if (m_onGlobalMessageDeleted)
+			m_onGlobalMessageDeleted(GetStr(j, "$[0].messageId"));
+	}
+	else if (target == "GlobalChatStateChanged")
+	{
+		if (m_onGlobalChatState)
+			m_onGlobalChatState(GetInt(j, "$[0].slowModeSeconds"));
+	}
+	else if (target == "FriendRequestReceived")
+	{
+		if (!m_onFriendRequest)
+			return;
+		FriendRequestEvent e;
+		e.requestId = GetLong(j, "$[0].requestId");
+		e.fromSubject = GetStr(j, "$[0].fromSubject");
+		e.fromUsername = GetStr(j, "$[0].fromUsername");
+		e.createdAt = GetStr(j, "$[0].createdAt");
+		m_onFriendRequest(e);
+	}
+	else if (target == "FriendAdded")
+	{
+		if (m_onFriendAdded)
+			m_onFriendAdded(GetStr(j, "$[0].subject"));
+	}
+	else if (target == "FriendRemoved")
+	{
+		if (m_onFriendRemoved)
+			m_onFriendRemoved(GetStr(j, "$[0].subject"));
+	}
+	else if (target == "FriendRequestDeclined")
+	{
+		if (m_onFriendRequestResolved)
+			m_onFriendRequestResolved(GetLong(j, "$[0].requestId"), false);
+	}
+	else if (target == "FriendRequestCancelled")
+	{
+		if (m_onFriendRequestResolved)
+			m_onFriendRequestResolved(GetLong(j, "$[0].requestId"), true);
+	}
+	else if (target == "FriendPresenceChanged")
+	{
+		if (!m_onFriendPresenceChanged)
+			return;
+		FriendPresence p;
+		p.subject = GetStr(j, "$[0].subject");
+		p.status = GetStr(j, "$[0].status");
+		p.serverId = GetInt(j, "$[0].serverId");
+		m_onFriendPresenceChanged(p);
 	}
 }

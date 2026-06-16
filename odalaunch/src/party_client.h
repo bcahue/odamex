@@ -82,6 +82,32 @@ struct SessionEvicted
 	std::string evictedTicketJti;
 };
 
+// ---- global chat / friends / presence (all on the same hub) ----
+
+struct GlobalChatMessage
+{
+	std::string messageId;     // GUID; the moderation handle
+	std::string authorSubject;
+	std::string authorUsername;
+	std::string text;
+	std::string sentAt;        // ISO-8601
+};
+
+struct FriendRequestEvent
+{
+	long long requestId = 0;
+	std::string fromSubject;
+	std::string fromUsername;
+	std::string createdAt;     // ISO-8601
+};
+
+struct FriendPresence
+{
+	std::string subject;
+	std::string status;        // "Offline" | "Online" | "InMatch"
+	int serverId = 0;          // 0 when not in a match
+};
+
 // Typed front end over the PartyHub SignalR connection.
 class PartyClient
 {
@@ -118,6 +144,19 @@ class PartyClient
 	void SetOnMatchAssigned(std::function<void(const MatchAssignment&)> h);
 	void SetOnSessionEvicted(std::function<void(const SessionEvicted&)> h);
 
+	// Global chat events.
+	void SetOnGlobalMessage(std::function<void(const GlobalChatMessage&)> h);
+	void SetOnGlobalMessageDeleted(std::function<void(const std::string& messageId)> h);
+	void SetOnGlobalChatState(std::function<void(int slowModeSeconds)> h);
+
+	// Friend-graph events.
+	void SetOnFriendRequest(std::function<void(const FriendRequestEvent&)> h);
+	void SetOnFriendAdded(std::function<void(const std::string& subject)> h);
+	void SetOnFriendRemoved(std::function<void(const std::string& subject)> h);
+	// requestId + cancelled flag (true = withdrawn by sender, false = declined by recipient).
+	void SetOnFriendRequestResolved(std::function<void(long long requestId, bool cancelled)> h);
+	void SetOnFriendPresenceChanged(std::function<void(const FriendPresence&)> h);
+
 	// Client->server hub methods.
 	void Invite(const std::string& inviteeSubject, InviteResultHandler cb);
 	void AcceptInvite(const std::string& inviteId, ResultHandler cb);
@@ -126,6 +165,9 @@ class PartyClient
 	void SendMessage(const std::string& text, ResultHandler cb);
 	void Kick(const std::string& targetSubject, ResultHandler cb);
 	void PromoteLeader(const std::string& newLeaderSubject, ResultHandler cb);
+
+	// Global chat send (hub-only). Friend ops go over REST (ApiClient), not the hub.
+	void SendGlobalMessage(const std::string& text, ResultHandler cb);
 
   private:
 	void Dispatch(const std::string& target, const std::string& argsJson);
@@ -140,4 +182,13 @@ class PartyClient
 	std::function<void(const PartyInviteDeclined&)> m_onInviteDeclined;
 	std::function<void(const MatchAssignment&)> m_onMatchAssigned;
 	std::function<void(const SessionEvicted&)> m_onSessionEvicted;
+
+	std::function<void(const GlobalChatMessage&)> m_onGlobalMessage;
+	std::function<void(const std::string&)> m_onGlobalMessageDeleted;
+	std::function<void(int)> m_onGlobalChatState;
+	std::function<void(const FriendRequestEvent&)> m_onFriendRequest;
+	std::function<void(const std::string&)> m_onFriendAdded;
+	std::function<void(const std::string&)> m_onFriendRemoved;
+	std::function<void(long long, bool)> m_onFriendRequestResolved;
+	std::function<void(const FriendPresence&)> m_onFriendPresenceChanged;
 };

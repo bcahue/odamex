@@ -65,6 +65,7 @@
 #include "launcher_session.h"
 #include "launcher_login.h"
 #include "ticket_refresher.h"
+#include "social_controller.h"
 
 // custom event declarations
 wxDECLARE_EVENT(wxEVT_THREAD_MONITOR_SIGNAL, wxCommandEvent);
@@ -307,6 +308,9 @@ protected:
 	// Live while connected to an authenticated server: mints/refreshes the game
 	// ticket in the background. Started in LaunchGame, stopped on game exit.
 	std::unique_ptr<TicketRefresher> m_TicketRefresher;
+	// Social features (friends / global chat / online players). Owns the hub +
+	// REST clients + state; created on sign-in, torn down on sign-out.
+	std::unique_ptr<SocialController> m_Social;
 	std::thread m_AuthThread;
 	bool m_AuthBusy;
 	// Shared with the login worker so shutdown (or a future cancel button) can

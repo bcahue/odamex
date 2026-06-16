@@ -365,6 +365,10 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 // Window Destructor
 dlgMain::~dlgMain()
 {
+	// Tear down the social controller first: it joins its hub + worker threads,
+	// which capture the session/DPoP key we still own here.
+	m_Social.reset();
+
 	// The login worker only ever blocks on the browser flow / sync HTTP; it
 	// posts its result and returns. Join it so we don't tear down under it.
 	if(m_AuthThread.joinable())
@@ -1779,6 +1783,24 @@ void dlgMain::UpdateAccountStatus()
 		// While a login is in flight, neither action should be invokable.
 		bar->Enable(XRCID("Id_MnuItmAccountLogin"), !m_AuthBusy && !signedIn);
 		bar->Enable(XRCID("Id_MnuItmAccountLogout"), !m_AuthBusy && signedIn);
+	}
+
+	// Bring the social features up on sign-in and down on sign-out. The hub +
+	// REST clients borrow the session's DPoP key and token, so they live and die
+	// with the signed-in session.
+	if(signedIn && !m_Social && m_Session->EnsureKey())
+	{
+		LauncherSession* sess = m_Session.get();
+		m_Social.reset(new SocialController(
+		    sess->ApiBaseUrl(),
+		    [sess]() { return sess->SessionToken().utf8_string(); },
+		    sess->Key(), this));
+		m_Social->Start();
+	}
+	else if(!signedIn && m_Social)
+	{
+		m_Social->Stop();
+		m_Social.reset();
 	}
 }
 
