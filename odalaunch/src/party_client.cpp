@@ -113,6 +113,11 @@ void PartyClient::Stop()
 	m_signalr->Stop();
 }
 
+void PartyClient::Abandon()
+{
+	m_signalr->Abandon();
+}
+
 bool PartyClient::IsConnected() const
 {
 	return m_signalr->IsConnected();

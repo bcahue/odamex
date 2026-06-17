@@ -135,6 +135,12 @@ ApiClient::Response ApiClient::SendFriendRequest(const std::string& targetSubjec
 	return Send("POST", "/api/friends/requests", TargetBody(targetSubject));
 }
 
+ApiClient::Response ApiClient::SendFriendRequestByUsername(const std::string& username)
+{
+	return Send("POST", "/api/friends/requests/by-username",
+	            "{\"username\":" + JsonString(username) + "}");
+}
+
 ApiClient::Response ApiClient::AcceptFriendRequest(long long requestId)
 {
 	const std::string p = "/api/friends/requests/" + std::to_string(requestId) + "/accept";

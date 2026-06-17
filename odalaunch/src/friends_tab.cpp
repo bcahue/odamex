@@ -20,9 +20,12 @@
 
 #include "friends_tab.h"
 
+#include <wx/button.h>
 #include <wx/listctrl.h>
 #include <wx/menu.h>
+#include <wx/stattext.h>
 #include <wx/string.h>
+#include <wx/textctrl.h>
 #include <wx/xrc/xmlres.h>
 
 #include "lst_custom.h"
@@ -59,6 +62,14 @@ void FriendsTab::PostInit()
 	m_requests->InsertColumn(0, "User", wxLIST_FORMAT_LEFT, 180);
 	m_requests->InsertColumn(1, "Direction", wxLIST_FORMAT_LEFT, 90);
 	m_requests->Bind(wxEVT_LIST_ITEM_RIGHT_CLICK, &FriendsTab::OnRequestRightClick, this);
+
+	m_addInput = XRCCTRL(*this, "Id_AddFriendInput", wxTextCtrl);
+	m_addButton = XRCCTRL(*this, "Id_AddFriendBtn", wxButton);
+	m_addStatus = XRCCTRL(*this, "Id_AddFriendStatus", wxStaticText);
+	m_addButton->Bind(wxEVT_BUTTON, &FriendsTab::OnAddFriend, this);
+	m_addInput->Bind(wxEVT_TEXT_ENTER, &FriendsTab::OnAddFriendEnter, this);
+	m_addInput->Enable(false);
+	m_addButton->Enable(false);
 }
 
 void FriendsTab::SetController(SocialController* controller)
@@ -72,8 +83,14 @@ void FriendsTab::SetController(SocialController* controller)
 		m_requests->DeleteAllItems();
 		m_requestRows.clear();
 		m_requestsSig.clear();
+		m_addInput->Enable(false);
+		m_addButton->Enable(false);
+		m_addInput->Clear();
+		m_addStatus->SetLabel(wxEmptyString);
 		return;
 	}
+	m_addInput->Enable(true);
+	m_addButton->Enable(true);
 	Refresh();
 }
 
@@ -214,4 +231,40 @@ void FriendsTab::OnRequestRightClick(wxListEvent& event)
 		m_controller->DeclineRequest(id);
 	else if (choice == kCancel)
 		m_controller->CancelRequest(id);
+}
+
+void FriendsTab::OnAddFriend(wxCommandEvent& WXUNUSED(event))
+{
+	SubmitAddFriend();
+}
+
+void FriendsTab::OnAddFriendEnter(wxCommandEvent& WXUNUSED(event))
+{
+	SubmitAddFriend();
+}
+
+void FriendsTab::SubmitAddFriend()
+{
+	if (!m_controller)
+		return;
+	const wxString username = m_addInput->GetValue().Trim().Trim(false);
+	if (username.IsEmpty())
+		return;
+
+	// Disable the controls while the request is in flight; the result callback
+	// (marshalled to the UI thread) re-enables them and reports the outcome.
+	m_addInput->Enable(false);
+	m_addButton->Enable(false);
+	m_addStatus->SetLabel("Sending request...");
+
+	m_controller->SendFriendRequestByUsername(
+	    username.utf8_string(), [this](bool ok, const std::string& message) {
+		    m_addStatus->SetLabel(wxString::FromUTF8(message));
+		    m_addInput->Enable(true);
+		    m_addButton->Enable(true);
+		    if (ok)
+			    m_addInput->Clear();
+		    else
+			    m_addInput->SetFocus();
+	    });
 }

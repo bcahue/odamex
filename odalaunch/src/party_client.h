@@ -129,6 +129,9 @@ class PartyClient
 	// Connection lifecycle.
 	void Start();
 	void Stop();
+	// Non-blocking teardown for app exit: detaches the transport threads instead
+	// of joining (see SignalRClient::Abandon). The owner must then be leaked.
+	void Abandon();
 	bool IsConnected() const;
 
 	void SetOnConnected(std::function<void()> h);

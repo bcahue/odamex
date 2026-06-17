@@ -32,7 +32,11 @@
 class SocialController;
 class SocialState;
 class wxAdvancedListCtrl;
+class wxButton;
+class wxCommandEvent;
 class wxListEvent;
+class wxStaticText;
+class wxTextCtrl;
 
 class FriendsTab : public wxPanel
 {
@@ -54,6 +58,9 @@ class FriendsTab : public wxPanel
   private:
 	void OnFriendRightClick(wxListEvent& event);  // Remove friend / Block
 	void OnRequestRightClick(wxListEvent& event); // Accept-Decline / Cancel
+	void OnAddFriend(wxCommandEvent& event);      // Add button
+	void OnAddFriendEnter(wxCommandEvent& event); // Enter in the username box
+	void SubmitAddFriend();
 
 	void RebuildFriends(const SocialState& state);
 	void RebuildRequests(const SocialState& state);
@@ -62,6 +69,9 @@ class FriendsTab : public wxPanel
 
 	wxAdvancedListCtrl* m_friends = nullptr;
 	wxAdvancedListCtrl* m_requests = nullptr;
+	wxTextCtrl* m_addInput = nullptr;
+	wxButton* m_addButton = nullptr;
+	wxStaticText* m_addStatus = nullptr;
 
 	// Row-order subject for the friends list (not sortable, so a clicked row
 	// maps straight to a subject here). A signature skips needless rebuilds.

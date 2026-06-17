@@ -55,6 +55,7 @@ class ApiClient
 
 	// Mutations.
 	Response SendFriendRequest(const std::string& targetSubject);
+	Response SendFriendRequestByUsername(const std::string& username);
 	Response AcceptFriendRequest(long long requestId);
 	Response DeclineFriendRequest(long long requestId);
 	Response CancelFriendRequest(long long requestId);

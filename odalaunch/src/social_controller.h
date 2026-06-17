@@ -63,12 +63,24 @@ class SocialController
 	void Start();
 	void Stop();
 
+	// Fast, non-blocking teardown for application exit: signals cancellation and
+	// detaches the hub + worker threads instead of joining them, so the app can
+	// quit immediately even mid-connect / mid-REST. The caller must then leak
+	// this controller (its members stay alive for the detached threads until the
+	// process exits); never call Stop()/destruct after Detach().
+	void Detach();
+
 	SocialState& State() { return m_state; }
 
 	// UI-thread actions.
 	void RefreshAll();
 	void SendGlobalMessage(const std::string& text);
 	void SendFriendRequest(const std::string& subject);
+	// Add-by-username: resolves + sends server-side. `done` is invoked on the UI
+	// thread with the outcome and a user-facing message (errors mapped to text).
+	void SendFriendRequestByUsername(
+	    const std::string& username,
+	    std::function<void(bool ok, const std::string& message)> done);
 	void AcceptRequest(long long requestId);
 	void DeclineRequest(long long requestId);
 	void CancelRequest(long long requestId);

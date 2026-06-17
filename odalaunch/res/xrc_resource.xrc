@@ -550,6 +550,41 @@
               <object class="wxBoxSizer">
                 <orient>wxVERTICAL</orient>
                 <object class="sizeritem">
+                  <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+                  <border>4</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                      <border>4</border>
+                      <object class="wxStaticText">
+                        <label>Add friend:</label>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                      <border>4</border>
+                      <object class="wxTextCtrl" name="Id_AddFriendInput">
+                        <style>wxTE_PROCESS_ENTER</style>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                      <object class="wxButton" name="Id_AddFriendBtn">
+                        <label>Add</label>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <flag>wxLEFT|wxRIGHT</flag>
+                  <border>4</border>
+                  <object class="wxStaticText" name="Id_AddFriendStatus">
+                    <label></label>
+                  </object>
+                </object>
+                <object class="sizeritem">
                   <flag>wxLEFT|wxRIGHT|wxTOP</flag>
                   <border>4</border>
                   <object class="wxStaticText" name="Id_FriendsHeader">

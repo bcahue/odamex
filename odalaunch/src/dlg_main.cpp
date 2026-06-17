@@ -438,6 +438,16 @@ void dlgMain::OnClose(wxCloseEvent& event)
 	if(m_AuthThread.joinable())
 		m_AuthThread.join();
 
+	// Exit immediately even if the social controller is mid-connect or mid-REST:
+	// detach its hub + worker threads (rather than joining and waiting out a
+	// network timeout) and deliberately leak it so those detached threads keep
+	// valid pointers until the process exits. ~dlgMain's reset() then no-ops.
+	if(m_Social)
+	{
+		m_Social->Detach();
+		(void)m_Social.release();
+	}
+
     // Stop any running timers and free their memory
     delete m_TimerNewList;
     m_TimerNewList = nullptr;

@@ -93,6 +93,12 @@ class SignalRClient
 	// Gracefully close the WebSocket and join all worker threads. Idempotent.
 	void Stop();
 
+	// Non-blocking variant for application exit: signals stop and best-effort
+	// closes the socket, then DETACHES the worker threads instead of joining, so
+	// a blocking connect/receive can't stall exit. The owner must be leaked
+	// afterwards (the detached threads reference the impl until the process exits).
+	void Abandon();
+
 	bool IsConnected() const;
 
 	// Fire-and-forget hub invocation (no result tracked). `argsJson` must be a

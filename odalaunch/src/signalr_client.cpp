@@ -747,6 +747,31 @@ void SignalRClient::Stop()
 		kv.second(false, "stopped");
 }
 
+void SignalRClient::Abandon()
+{
+	if (!m_impl->started.exchange(false))
+		return;
+
+	m_impl->stop.store(true);
+	m_impl->waitCv.notify_all();
+
+	// Best-effort close to unblock a receive; a mid-connect lifecycle thread may
+	// still be blocked in WinHTTP, which is why we detach rather than join.
+	{
+		std::lock_guard<std::mutex> lk(m_impl->netMutex);
+		if (m_impl->hWebSocket)
+			WinHttpWebSocketClose(m_impl->hWebSocket,
+			                      WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+	}
+
+	// Detach: the threads run to completion against the (leaked) impl, or the
+	// process exit terminates them -- either way, exit doesn't block on them.
+	if (m_impl->lifecycleThread.joinable())
+		m_impl->lifecycleThread.detach();
+	if (m_impl->pingThread.joinable())
+		m_impl->pingThread.detach();
+}
+
 bool SignalRClient::IsConnected() const
 {
 	return m_impl->connected.load();

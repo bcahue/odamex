@@ -202,6 +202,28 @@ void SocialController::Stop()
 		m_worker.join();
 }
 
+void SocialController::Detach()
+{
+	// Block any in-flight marshalled callbacks from touching us during teardown.
+	if (m_alive)
+		m_alive->store(false);
+
+	{
+		std::lock_guard<std::mutex> lk(m_mutex);
+		m_running = false;
+	}
+	m_cv.notify_all();
+
+	// Detach rather than join: a sync REST call or a mid-connect WinHTTP socket
+	// could otherwise block exit for the full network timeout. The caller leaks
+	// this controller, so the detached threads keep valid pointers until the
+	// process exits (which terminates them).
+	if (m_hub)
+		m_hub->Abandon();
+	if (m_worker.joinable())
+		m_worker.detach();
+}
+
 void SocialController::WireHubEvents()
 {
 	m_hub->SetOnGlobalMessage([this](const GlobalChatMessage& m) {
@@ -317,6 +339,46 @@ void SocialController::SendFriendRequest(const std::string& subject)
 	Enqueue([this, subject] {
 		m_api->SendFriendRequest(subject);
 		DoRefreshAll();
+	});
+}
+
+void SocialController::SendFriendRequestByUsername(
+    const std::string& username,
+    std::function<void(bool ok, const std::string& message)> done)
+{
+	Enqueue([this, username, done = std::move(done)] {
+		ApiClient::Response r = m_api->SendFriendRequestByUsername(username);
+
+		std::string message;
+		if (r.ok)
+		{
+			message = "Friend request sent.";
+			DoRefreshAll(); // reflect the new outgoing request (or auto-accept)
+		}
+		else
+		{
+			// Map the server's error code ({"error":"..."}) to friendly text.
+			struct mg_str j = mg_str_n(r.body.data(), r.body.size());
+			const std::string err = GetStr(j, "$.error");
+			if (err == "TargetNotFound")
+				message = "No player found with that username.";
+			else if (err == "AlreadyFriends")
+				message = "You're already friends with that player.";
+			else if (err == "RequestAlreadyPending")
+				message = "A request to that player is already pending.";
+			else if (err == "SelfTarget")
+				message = "You can't send a friend request to yourself.";
+			else if (err == "Blocked")
+				message = "Unable to send a request to that player.";
+			else if (err == "FriendLimitReached")
+				message = "Your friends list is full.";
+			else
+				message = "Couldn't send the friend request.";
+		}
+
+		const bool ok = r.ok;
+		if (done)
+			Marshal([done, ok, message] { done(ok, message); });
 	});
 }
 
