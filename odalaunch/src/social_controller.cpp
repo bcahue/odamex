@@ -116,6 +116,9 @@ void ParseParticipants(const std::string& body, std::vector<SocialParticipant>& 
 		p.username = GetStr(j, P("participants", i, "username"));
 		p.status = GetStr(j, P("participants", i, "status"));
 		p.serverId = GetInt(j, P("participants", i, "serverId"));
+		bool self = false;
+		mg_json_get_bool(j, P("participants", i, "isSelf").c_str(), &self);
+		p.isSelf = self;
 		out.push_back(std::move(p));
 	}
 }
@@ -165,8 +168,21 @@ void SocialController::Start()
 	m_running = true;
 	m_worker = std::thread([this] { WorkerLoop(); });
 
-	// Initial load (and re-load) whenever the hub (re)connects.
-	m_hub->SetOnConnected([this] { Enqueue([this] { DoRefreshAll(); }); });
+	// Initial load (and re-load) whenever the hub (re)connects; surface the
+	// connection state so the chat tab can show "connecting" / "disconnected".
+	m_hub->SetOnConnected([this] {
+		Marshal([this] {
+			m_state.hubState = SocialState::HubState::Connected;
+			m_state.NotifyChanged();
+		});
+		Enqueue([this] { DoRefreshAll(); });
+	});
+	m_hub->SetOnClosed([this](const std::string& /*reason*/, bool /*willRetry*/) {
+		Marshal([this] {
+			m_state.hubState = SocialState::HubState::Disconnected;
+			m_state.NotifyChanged();
+		});
+	});
 	m_hub->Start();
 }
 

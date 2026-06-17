@@ -30,7 +30,7 @@ include_directories(${API_DIR} ${LAUNCH_DIR} ${XRCRES_BINARY_DIR})
 #      perspective) if we got a target out of it, which we don't for
 #      wxWidgets.  So we do the ugly downloading bits in libraries and do
 #      the "find" here.
-find_package(wxWidgets COMPONENTS core base adv net xrc)
+find_package(wxWidgets COMPONENTS webview html xml core base adv net xrc)
 if(wxWidgets_FOUND)
   include( "${wxWidgets_USE_FILE}" )
 else()

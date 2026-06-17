@@ -52,6 +52,7 @@ struct SocialParticipant
 	std::string username;
 	std::string status;
 	int serverId = 0;
+	bool isSelf = false;
 };
 
 struct SocialChatLine
@@ -67,6 +68,16 @@ struct SocialChatLine
 class SocialState
 {
   public:
+	// Realtime hub connection state, surfaced so the chat tab can tell the user
+	// when chat is unavailable (connecting / dropped) rather than failing silently.
+	enum class HubState
+	{
+		Connecting,
+		Connected,
+		Disconnected
+	};
+	HubState hubState = HubState::Connecting;
+
 	std::vector<SocialFriend> friends;
 	std::vector<SocialRequest> incoming;
 	std::vector<SocialRequest> outgoing;

@@ -25,6 +25,8 @@
 
 #include "odalaunch.h"
 
+#include <wx/notebook.h>
+
 #include "lst_players.h"
 #include "lst_servers.h"
 #include "lst_srvdetails.h"
@@ -70,6 +72,8 @@
 // custom event declarations
 wxDECLARE_EVENT(wxEVT_THREAD_MONITOR_SIGNAL, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_THREAD_WORKER_SIGNAL, wxCommandEvent);
+
+class ChatTab;
 
 class dlgMain : public wxFrame, wxThreadHelper
 {
@@ -166,6 +170,15 @@ protected:
 
 	wxPanel* m_PnlServerFilter;
 	wxSearchCtrl* m_SrchCtrlGlobal;
+
+	// Top-level tab strip. The server browser lives on the Servers page; the
+	// social features (slices L3-L5) build their UI onto the other three panels.
+	wxNotebook* m_MainNotebook;
+	wxPanel* m_FriendsTab;
+
+	// Global-chat tab — an XRC-subclassed ChatTab (slice L3). Hosts both the
+	// chat scrollback and the online-players list.
+	ChatTab* m_ChatPanel;
 
 	wxStatusBar* m_StatusBar;
 	wxProcess* m_Process;
