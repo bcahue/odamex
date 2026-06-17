@@ -85,6 +85,7 @@
 #include "hwid.h"
 #include "ticket_refresher.h"
 #include "chat_tab.h"
+#include "friends_tab.h"
 
 using namespace odalpapi;
 
@@ -233,14 +234,15 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 	m_SrchCtrlGlobal = XRCCTRL(*this, "Id_SrchCtrlGlobal", wxSearchCtrl);
 	m_StatusBar = GetStatusBar();
 
-	// Top-level tabs. The server browser is now the "Servers" page; the other
-	// three panels are empty scaffolds the social slices (L3-L5) fill in.
+	// Top-level tabs. The server browser is now the "Servers" page; the Friends
+	// and Chat panels are XRC-subclassed views that stay idle until a session
+	// signs in and SetController() hands them the live controller.
 	m_MainNotebook = XRCCTRL(*this, "Id_MainNotebook", wxNotebook);
-	m_FriendsTab = XRCCTRL(*this, "Id_PnlFriendsTab", wxPanel);
 
-	// The Chat tab is an XRC-subclassed ChatTab (its controls are defined in
-	// XRC); retrieve it and finish wiring. It stays idle until a session signs
-	// in and SetController() hands it the live controller.
+	m_FriendsTab = XRCCTRL(*this, "Id_PnlFriendsTab", FriendsTab);
+	if(m_FriendsTab)
+		m_FriendsTab->PostInit();
+
 	m_ChatPanel = XRCCTRL(*this, "Id_PnlChatTab", ChatTab);
 	if(m_ChatPanel)
 		m_ChatPanel->PostInit();
@@ -1808,20 +1810,25 @@ void dlgMain::UpdateAccountStatus()
 		    sess->ApiBaseUrl(),
 		    [sess]() { return sess->SessionToken().utf8_string(); },
 		    sess->Key(), this));
-		// Re-render the social tabs whenever state changes (fires on the UI
-		// thread). Add the friends/players panels here in slices L4/L5.
+		// Re-render the social tabs whenever state changes (fires on the UI thread).
 		m_Social->State().SetOnChanged([this] {
 			if(m_ChatPanel)
 				m_ChatPanel->Refresh();
+			if(m_FriendsTab)
+				m_FriendsTab->Refresh();
 		});
 		if(m_ChatPanel)
 			m_ChatPanel->SetController(m_Social.get());
+		if(m_FriendsTab)
+			m_FriendsTab->SetController(m_Social.get());
 		m_Social->Start();
 	}
 	else if(!signedIn && m_Social)
 	{
 		if(m_ChatPanel)
 			m_ChatPanel->SetController(nullptr);
+		if(m_FriendsTab)
+			m_FriendsTab->SetController(nullptr);
 		m_Social->Stop();
 		m_Social.reset();
 	}

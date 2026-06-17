@@ -56,13 +56,14 @@ const char* const kChatHtml = R"HTML(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">
 <style>
   html,body{margin:0;padding:0;height:100%;}
-  body{font-family:'Segoe UI',sans-serif;font-size:13px;background:@BG@;color:@FG@;
+  body{font-family:'Segoe UI','Segoe UI Emoji','Segoe UI Symbol',sans-serif;font-size:13px;background:@BG@;color:@FG@;
        padding:4px 6px;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;}
   .msg{margin:1px 0;line-height:1.35;word-wrap:break-word;overflow-wrap:anywhere;}
   .user{font-weight:bold;}
   .ts{opacity:0.55;}
   .sys{opacity:0.6;font-style:italic;}
   .blocked{color:#b06a6a;font-style:italic;cursor:pointer;}
+  .hide{color:#b06a6a;font-style:italic;cursor:pointer;opacity:0.8;}
 </style></head>
 <body><div id="log"></div>
 <script>
@@ -81,6 +82,12 @@ const char* const kChatHtml = R"HTML(<!DOCTYPE html>
     }
     var u=document.createElement('span'); u.className='user'; u.textContent=m.user+': '; div.appendChild(u);
     var t=document.createElement('span'); t.textContent=m.text; div.appendChild(t);
+    if(m.blocked){
+      // Revealed blocked message: offer a link to collapse it again.
+      var h=document.createElement('span'); h.className='hide'; h.textContent=' [hide]';
+      h.onclick=function(){ revealed[m.id]=false; rerender(); };
+      div.appendChild(h);
+    }
     return div;
   }
   function rerender(){
@@ -140,7 +147,10 @@ void ChatTab::PostInit()
 	wxPanel* host = XRCCTRL(*this, "Id_ChatDisplayHost", wxPanel);
 	wxString backend = wxWebViewBackendDefault;
 	if (wxWebView::IsBackendAvailable(wxWebViewBackendEdge))
+	{
 		backend = wxWebViewBackendEdge;
+		m_isEdge = true;
+	}
 #ifdef __WXMSW__
 	else
 		// Falling back to the legacy IE control: by default it emulates IE7, where
@@ -200,8 +210,7 @@ void ChatTab::SetController(SocialController* controller)
 		m_input->Enable(false);
 		m_send->Enable(false);
 		m_status->SetLabel("Sign in to use global chat.");
-		if (m_webReady)
-			m_web->RunScript("setMessages([]);");
+		RunJs("setMessages([]);");
 		m_players->DeleteAllItems();
 		m_playerSubjects.clear();
 		m_playersSig.clear();
@@ -316,10 +325,19 @@ void ChatTab::RenderMessages(const SocialState& state)
 	}
 	json += "]";
 
-	// RunScript (synchronous) rather than RunScriptAsync: the legacy IE backend
-	// only implements the former, and we don't need the result. Edge supports both.
-	wxString script = "setMessages(" + wxString::FromUTF8(json) + ");";
-	m_web->RunScript(script);
+	RunJs("setMessages(" + wxString::FromUTF8(json) + ");");
+}
+
+void ChatTab::RunJs(const wxString& script)
+{
+	if (!m_web || !m_webReady)
+		return;
+	// Edge (Chromium) supports the async, non-blocking variant; the legacy IE
+	// backend only implements the synchronous RunScript. We never use the result.
+	if (m_isEdge)
+		m_web->RunScriptAsync(script);
+	else
+		m_web->RunScript(script);
 }
 
 void ChatTab::RebuildPlayers(const SocialState& state)

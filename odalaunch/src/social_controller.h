@@ -81,7 +81,8 @@ class SocialController
 	void WorkerLoop();
 	void Enqueue(std::function<void()> work); // run on the worker thread
 	void Marshal(std::function<void()> uiWork); // run on the UI thread, alive-guarded
-	void DoRefreshAll(); // worker thread: fetch + parse + marshal-apply
+	void DoRefreshAll();          // worker thread: fetch + parse + marshal-apply
+	void DoRefreshParticipants(); // worker thread: refetch the participant roster only
 
 	std::unique_ptr<ApiClient> m_api;
 	std::unique_ptr<PartyClient> m_hub;

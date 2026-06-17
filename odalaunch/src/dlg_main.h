@@ -74,6 +74,7 @@ wxDECLARE_EVENT(wxEVT_THREAD_MONITOR_SIGNAL, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_THREAD_WORKER_SIGNAL, wxCommandEvent);
 
 class ChatTab;
+class FriendsTab;
 
 class dlgMain : public wxFrame, wxThreadHelper
 {
@@ -172,9 +173,12 @@ protected:
 	wxSearchCtrl* m_SrchCtrlGlobal;
 
 	// Top-level tab strip. The server browser lives on the Servers page; the
-	// social features (slices L3-L5) build their UI onto the other three panels.
+	// social features build their UI onto the other panels.
 	wxNotebook* m_MainNotebook;
-	wxPanel* m_FriendsTab;
+
+	// Friends tab — an XRC-subclassed FriendsTab (slice L5): friends list +
+	// pending requests, acting through the SocialController.
+	FriendsTab* m_FriendsTab;
 
 	// Global-chat tab — an XRC-subclassed ChatTab (slice L3). Hosts both the
 	// chat scrollback and the online-players list.

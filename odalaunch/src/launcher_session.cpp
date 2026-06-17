@@ -27,6 +27,8 @@
 #include <ctime>
 #include <string>
 
+#include "json_util.h"
+
 #include "oda_defs.h"
 #include "session_store.h"
 
@@ -123,12 +125,11 @@ wxString LauncherSession::UsernameFromToken(const wxString& token)
 		return wxString();
 
 	struct mg_str j = mg_str_n(payload.data(), payload.size());
-	char* v = mg_json_get_str(j, "$.preferred_username");
-	if (v == nullptr)
+	// JsonGetStr so non-ASCII usernames survive (Mongoose mangles \uXXXX > 0x7F).
+	const std::string v = JsonGetStr(j, "$.preferred_username");
+	if (v.empty())
 		return wxString();
-	wxString out = wxString::FromUTF8(v);
-	mg_free(v);
-	return out;
+	return wxString::FromUTF8(v);
 }
 
 int64_t LauncherSession::ExpiryFromToken(const wxString& token)
@@ -178,12 +179,10 @@ bool LauncherSession::ParseBlob(const std::string& blob, wxString& token,
 	token = wxString::FromUTF8(t);
 	mg_free(t);
 
-	char* u = mg_json_get_str(j, "$.username");
-	if (u != nullptr)
-	{
+	// JsonGetStr so non-ASCII usernames survive (Mongoose mangles \uXXXX > 0x7F).
+	const std::string u = JsonGetStr(j, "$.username");
+	if (!u.empty())
 		username = wxString::FromUTF8(u);
-		mg_free(u);
-	}
 	if (username.empty())
 		username = UsernameFromToken(token);
 	return !token.empty();

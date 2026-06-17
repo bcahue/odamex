@@ -70,12 +70,16 @@ class ChatTab : public wxPanel
 
 	void RenderMessages(const SocialState& state);
 	void RebuildPlayers(const SocialState& state);
+	// Run a script in the page: async (non-blocking) on Edge, sync on the legacy
+	// IE backend (which lacks RunScriptAsync). No-op until the page is ready.
+	void RunJs(const wxString& script);
 	wxString FormatTimestamp(const std::string& isoUtc) const; // "HH:MM" local, or empty
 
 	SocialController* m_controller = nullptr;
 
 	wxWebView* m_web = nullptr;
 	bool m_webReady = false; // SetPage is async; only script once the page is loaded
+	bool m_isEdge = false;   // Edge backend in use -> RunScriptAsync; else RunScript
 	wxTextCtrl* m_input = nullptr;
 	wxButton* m_send = nullptr;
 	wxCheckBox* m_timestamps = nullptr;

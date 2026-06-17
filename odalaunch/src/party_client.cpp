@@ -24,6 +24,7 @@
 
 #include <string>
 
+#include "json_util.h"
 #include "signalr_client.h"
 
 namespace
@@ -72,12 +73,9 @@ std::string Args1(const std::string& a)
 
 std::string GetStr(const struct mg_str& j, const char* path)
 {
-	char* v = mg_json_get_str(j, path);
-	if (!v)
-		return std::string();
-	std::string s(v);
-	mg_free(v);
-	return s;
+	// JsonGetStr (not mg_json_get_str) so non-ASCII text -- chat messages,
+	// usernames -- survives: Mongoose truncates at the first \uXXXX > 0x7F.
+	return JsonGetStr(j, path);
 }
 
 int GetInt(const struct mg_str& j, const char* path)
@@ -175,6 +173,10 @@ void PartyClient::SetOnGlobalMessageDeleted(std::function<void(const std::string
 void PartyClient::SetOnGlobalChatState(std::function<void(int)> h)
 {
 	m_onGlobalChatState = std::move(h);
+}
+void PartyClient::SetOnGlobalParticipantsChanged(std::function<void()> h)
+{
+	m_onGlobalParticipantsChanged = std::move(h);
 }
 void PartyClient::SetOnFriendRequest(std::function<void(const FriendRequestEvent&)> h)
 {
@@ -369,6 +371,11 @@ void PartyClient::Dispatch(const std::string& target, const std::string& args)
 	{
 		if (m_onGlobalChatState)
 			m_onGlobalChatState(GetInt(j, "$[0].slowModeSeconds"));
+	}
+	else if (target == "GlobalParticipantsChanged")
+	{
+		if (m_onGlobalParticipantsChanged)
+			m_onGlobalParticipantsChanged();
 	}
 	else if (target == "FriendRequestReceived")
 	{

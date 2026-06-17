@@ -26,6 +26,7 @@
 #include <wx/event.h>
 
 #include "api_client.h"
+#include "json_util.h"
 #include "party_client.h"
 
 namespace
@@ -34,12 +35,9 @@ const size_t kChatCap = 200;
 
 std::string GetStr(const struct mg_str& j, const std::string& path)
 {
-	char* v = mg_json_get_str(j, path.c_str());
-	if (!v)
-		return std::string();
-	std::string s(v);
-	mg_free(v);
-	return s;
+	// JsonGetStr (not mg_json_get_str) so non-ASCII chat text / usernames
+	// survive: Mongoose truncates at the first \uXXXX > 0x7F.
+	return JsonGetStr(j, path.c_str());
 }
 
 int GetInt(const struct mg_str& j, const std::string& path)
@@ -240,6 +238,10 @@ void SocialController::WireHubEvents()
 			m_state.NotifyChanged();
 		});
 	});
+
+	// Someone joined/left the channel: refresh just the participant roster.
+	m_hub->SetOnGlobalParticipantsChanged(
+	    [this] { Enqueue([this] { DoRefreshParticipants(); }); });
 
 	m_hub->SetOnFriendRequest([this](const FriendRequestEvent& e) {
 		Marshal([this, e] {
@@ -448,6 +450,20 @@ void SocialController::DoRefreshAll()
 		m_state.blocked = std::move(blocked);
 		m_state.participants = std::move(participants);
 		m_state.chat = std::move(chat);
+		m_state.NotifyChanged();
+	});
+}
+
+void SocialController::DoRefreshParticipants()
+{
+	std::vector<SocialParticipant> participants;
+	ApiClient::Response pr = m_api->GetParticipants();
+	if (!pr.ok)
+		return; // transient: keep the existing roster rather than blanking it
+	ParseParticipants(pr.body, participants);
+
+	Marshal([this, participants = std::move(participants)]() mutable {
+		m_state.participants = std::move(participants);
 		m_state.NotifyChanged();
 	});
 }

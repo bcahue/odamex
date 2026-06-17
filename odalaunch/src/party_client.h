@@ -148,6 +148,8 @@ class PartyClient
 	void SetOnGlobalMessage(std::function<void(const GlobalChatMessage&)> h);
 	void SetOnGlobalMessageDeleted(std::function<void(const std::string& messageId)> h);
 	void SetOnGlobalChatState(std::function<void(int slowModeSeconds)> h);
+	// A user joined/left the global channel; the participant roster should refresh.
+	void SetOnGlobalParticipantsChanged(std::function<void()> h);
 
 	// Friend-graph events.
 	void SetOnFriendRequest(std::function<void(const FriendRequestEvent&)> h);
@@ -186,6 +188,7 @@ class PartyClient
 	std::function<void(const GlobalChatMessage&)> m_onGlobalMessage;
 	std::function<void(const std::string&)> m_onGlobalMessageDeleted;
 	std::function<void(int)> m_onGlobalChatState;
+	std::function<void()> m_onGlobalParticipantsChanged;
 	std::function<void(const FriendRequestEvent&)> m_onFriendRequest;
 	std::function<void(const std::string&)> m_onFriendAdded;
 	std::function<void(const std::string&)> m_onFriendRemoved;

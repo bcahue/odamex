@@ -546,7 +546,41 @@
           </object>
           <object class="notebookpage">
             <label>Friends</label>
-            <object class="wxPanel" name="Id_PnlFriendsTab"/>
+            <object class="wxPanel" subclass="FriendsTab" name="Id_PnlFriendsTab">
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <flag>wxLEFT|wxRIGHT|wxTOP</flag>
+                  <border>4</border>
+                  <object class="wxStaticText" name="Id_FriendsHeader">
+                    <label>Friends</label>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>3</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>4</border>
+                  <object class="wxListCtrl" name="Id_FriendsList" subclass="wxAdvancedListCtrl">
+                    <style>wxLC_REPORT|wxLC_SINGLE_SEL</style>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <flag>wxLEFT|wxRIGHT</flag>
+                  <border>4</border>
+                  <object class="wxStaticText" name="Id_RequestsHeader">
+                    <label>Pending requests</label>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>2</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>4</border>
+                  <object class="wxListCtrl" name="Id_FriendRequests" subclass="wxAdvancedListCtrl">
+                    <style>wxLC_REPORT|wxLC_SINGLE_SEL</style>
+                  </object>
+                </object>
+              </object>
+            </object>
           </object>
           <object class="notebookpage">
             <label>Global Chat</label>

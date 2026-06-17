@@ -1,43 +1,62 @@
 function(odalaunch_copy_libs TARGET)
-  set(ODAMEX_DLLS "")
-
-  if(WIN32)
-    if(MSVC_VERSION GREATER_EQUAL 1900)
-      if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(WX_DLL_DIR "${CMAKE_BINARY_DIR}/libraries/wxWidgets/lib/vc14x_x64_dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxbase332ud_net_vc14x_x64.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxbase332ud_vc14x_x64.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxbase332ud_xml_vc14x_x64.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw332ud_core_vc14x_x64.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw332ud_html_vc14x_x64.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw332ud_webview_vc14x_x64.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw332ud_xrc_vc14x_x64.dll")
-      else()
-        set(WX_DLL_DIR "${CMAKE_BINARY_DIR}/libraries/wxWidgets/lib/vc14x_dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxbase32ud_net_vc14x.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxbase32ud_vc14x.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxbase32ud_xml_vc14x.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw32ud_core_vc14x.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw32ud_html_vc14x.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw32ud_webview_vc14x.dll")
-        list(APPEND ODAMEX_DLLS "${WX_DLL_DIR}/wxmsw32ud_xrc_vc14x.dll")
-      endif()
-    endif()
+  if(NOT WIN32)
+    return()
   endif()
 
-  # Copy library files to target directory.
-  foreach(ODAMEX_DLL ${ODAMEX_DLLS})
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-      string(REPLACE "332ud_" "332u_" ODAMEX_RELEASE_DLL "${ODAMEX_DLL}")
+  # Deploy the wxWidgets runtime DLLs next to the launcher. We glob the resolved
+  # lib directory rather than hardcoding names so this works regardless of the
+  # version (3.3.2 vs 3.3.3...) or the compiler prefix (the prebuilt "vc14x" vs a
+  # from-source build's "vc"). FindwxWidgets gives us wxWidgets_LIB_DIR; both the
+  # prebuilt layout and a from-source `cmake --install` put the DLLs there next
+  # to the import libs.
+  if(NOT wxWidgets_LIB_DIR OR NOT EXISTS "${wxWidgets_LIB_DIR}")
+    message(WARNING "wxWidgets_LIB_DIR is not set/found; cannot deploy wxWidgets DLLs next to ${TARGET}.")
+    return()
+  endif()
+
+  set(_wx_dll_dir "${wxWidgets_LIB_DIR}")
+
+  # wx names DLLs ...ud_... (debug) / ...u_... (release).
+  get_property(_wx_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+  if(_wx_multi)
+    # Multi-config: both debug and release DLLs sit side by side. Glob the debug
+    # set, derive each release counterpart, and copy the right one per config.
+    file(GLOB _wx_dlls "${_wx_dll_dir}/*ud_*.dll")
+    foreach(_wx_dll ${_wx_dlls})
+      string(REPLACE "ud_" "u_" _wx_rel "${_wx_dll}")
+      add_custom_command(TARGET ${TARGET} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        $<$<CONFIG:Debug>:${_wx_dll}>
+        $<$<CONFIG:Release>:${_wx_rel}>
+        $<$<CONFIG:RelWithDebInfo>:${_wx_rel}>
+        $<$<CONFIG:MinSizeRel>:${_wx_rel}>
+        $<TARGET_FILE_DIR:${TARGET}> VERBATIM)
+    endforeach()
+  else()
+    # Single-config (Ninja): only one config's DLLs exist (debug for a Debug
+    # build, release otherwise). Pick the matching set and copy unconditionally.
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      file(GLOB _wx_dlls "${_wx_dll_dir}/*ud_*.dll")
     else()
-      string(REPLACE "32ud_" "32u_" ODAMEX_RELEASE_DLL "${ODAMEX_DLL}")
+      file(GLOB _wx_dlls "${_wx_dll_dir}/*u_*.dll")
+      file(GLOB _wx_debug "${_wx_dll_dir}/*ud_*.dll")
+      if(_wx_debug)
+        list(REMOVE_ITEM _wx_dlls ${_wx_debug})
+      endif()
     endif()
+    foreach(_wx_dll ${_wx_dlls})
+      add_custom_command(TARGET ${TARGET} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${_wx_dll}" $<TARGET_FILE_DIR:${TARGET}> VERBATIM)
+    endforeach()
+  endif()
+
+  # WebView2Loader.dll (present only on Edge-enabled from-source builds) is the
+  # same binary for every config, so copy it unconditionally when it exists.
+  if(EXISTS "${_wx_dll_dir}/WebView2Loader.dll")
     add_custom_command(TARGET ${TARGET} POST_BUILD
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-      $<$<CONFIG:Debug>:${ODAMEX_DLL}>
-      $<$<CONFIG:Release>:${ODAMEX_RELEASE_DLL}>
-      $<$<CONFIG:RelWithDebInfo>:${ODAMEX_RELEASE_DLL}>
-      $<$<CONFIG:MinSizeRel>:${ODAMEX_RELEASE_DLL}>
+      "${_wx_dll_dir}/WebView2Loader.dll"
       $<TARGET_FILE_DIR:${TARGET}> VERBATIM)
-  endforeach()
+  endif()
 endfunction()
