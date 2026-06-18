@@ -33,6 +33,17 @@
 // Show servers that cannot be contacted because of a firewall or bad connection
 #define ODA_UISHOWBLOCKEDSERVERS 0
 
+// Mask profanity in the global chat view (client-side, on by default)
+#define ODA_UIFILTERPROFANITY 1
+
+// Show timestamps next to global chat messages (off by default)
+#define ODA_UISHOWCHATTIMESTAMPS 0
+
+// Use 24-hour clock for chat timestamps (on by default), and whether to
+// include seconds (off by default)
+#define ODA_UICHAT24HOURTIME 1
+#define ODA_UICHATSHOWSECONDS 0
+
 // Load chat client when the launcher is run
 #define ODA_UILOADCHATCLIENTONLS 0
 
@@ -129,6 +140,10 @@ inline constexpr const char* def_masterlist[] =
 // Do not modify unless breaking our users config files is necessary
 #define GETLISTONSTART      "GetListOnStart"
 #define SHOWBLOCKEDSERVERS  "ShowBlockedServers"
+#define FILTERPROFANITY     "FilterProfanity"
+#define SHOWCHATTIMESTAMPS  "ShowChatTimestamps"
+#define CHAT24HOURTIME      "Chat24HourTime"
+#define CHATSHOWSECONDS     "ChatShowSeconds"
 #define CHECKFORUPDATES     "CheckForUpdates"
 #define DELIMWADPATHS       "DelimWadPaths"
 #define ODAMEX_DIRECTORY    "OdamexDirectory"

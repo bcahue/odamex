@@ -89,14 +89,21 @@ ApiClient::Response ApiClient::Send(const char* method, const wxString& path,
 	request.SetHeader("Authorization", "Bearer " + wxString::FromUTF8(token));
 	request.SetHeader("DPoP", wxString::FromUTF8(proof));
 
-	wxWebRequestSync::Result result = request.Execute();
-	if (result.state != wxWebRequest::State_Completed)
-		return r;
+	// NB: wxWebRequest reports State_Failed for HTTP error statuses (4xx/5xx),
+	// not only transport failures, so we must NOT early-return on !Completed --
+	// doing so would discard the real status and the {"error":...} body and make
+	// every 400/403/404 look like an unreachable server. Instead, read the
+	// response whenever one exists; a missing/invalid response (no headers ever
+	// received) is the genuine transport failure, which leaves r.status == 0.
+	request.Execute();
 
 	wxWebResponse response = request.GetResponse();
-	r.status = response.GetStatus();
-	r.body = response.AsString().utf8_string();
-	r.ok = (r.status >= 200 && r.status < 300);
+	if (response.IsOk())
+	{
+		r.status = response.GetStatus();
+		r.body = response.AsString().utf8_string();
+		r.ok = (r.status >= 200 && r.status < 300);
+	}
 	return r;
 }
 

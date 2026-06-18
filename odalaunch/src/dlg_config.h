@@ -83,8 +83,15 @@ protected:
 
 	void OnNotebookPageChanged(wxBookCtrlEvent& event);
 
+	// Grey out the timestamp-format options when timestamps are turned off.
+	void UpdateChatTimestampOptionsEnabled();
+
 	wxCheckBox* m_ChkCtrlGetListOnStart;
 	wxCheckBox* m_ChkCtrlShowBlockedServers;
+	wxCheckBox* m_ChkFilterProfanity;
+	wxCheckBox* m_ChkShowChatTimestamps;
+	wxCheckBox* m_ChkChat24HourTime;
+	wxCheckBox* m_ChkChatShowSeconds;
 	wxCheckBox* m_ChkCtrlCheckForUpdates;
 	wxCheckBox* m_ChkCtrlEnableBroadcasts;
 	wxCheckBox* m_ChkCtrlFlashTaskBar;

@@ -41,14 +41,14 @@
 #include <cstdio>
 
 #include "lst_custom.h"
+#include "oda_defs.h"
+#include "profanity_filter.h"
 #include "social_controller.h"
 
 wxIMPLEMENT_DYNAMIC_CLASS(ChatTab, wxPanel);
 
 namespace
 {
-const char* const kShowTimestampsKey = "ShowChatTimestamps";
-
 // The page shell. Colours (@BG@/@FG@) are substituted from the system theme so
 // it matches light/dark. All user content is written with textContent (never
 // innerHTML), so chat text cannot inject markup. Block reveal is local JS.
@@ -77,7 +77,7 @@ const char* const kChatHtml = R"HTML(<!DOCTYPE html>
     if(m.blocked && !revealed[m.id]){
       div.className='msg blocked';
       var b=document.createElement('span'); b.textContent='[blocked user — click to show]'; div.appendChild(b);
-      div.onclick=function(){ revealed[m.id]=true; rerender(); };
+      div.onclick=function(){ revealed[m.id]=true; rerender(true); };
       return div;
     }
     var u=document.createElement('span'); u.className='user'; u.textContent=m.user+': '; div.appendChild(u);
@@ -85,18 +85,31 @@ const char* const kChatHtml = R"HTML(<!DOCTYPE html>
     if(m.blocked){
       // Revealed blocked message: offer a link to collapse it again.
       var h=document.createElement('span'); h.className='hide'; h.textContent=' [hide]';
-      h.onclick=function(){ revealed[m.id]=false; rerender(); };
+      h.onclick=function(){ revealed[m.id]=false; rerender(true); };
       div.appendChild(h);
     }
     return div;
   }
-  function rerender(){
+  function getScrollTop(){
+    return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  }
+  function setScrollTop(y){
+    // The scroll container differs between backends, so set every candidate;
+    // the non-scrolling ones clamp harmlessly.
+    window.scrollTo(0, y);
+    document.documentElement.scrollTop = y;
+    document.body.scrollTop = y;
+  }
+  // keepScroll: hold the current position (e.g. reveal/hide a blocked message)
+  // instead of jumping to the bottom (the default, for newly arrived messages).
+  function rerender(keepScroll){
     var log=document.getElementById('log');
+    var prev=getScrollTop();
     log.innerHTML='';
     for(var i=0;i<current.length;i++) log.appendChild(buildMsg(current[i]));
-    window.scrollTo(0, document.body.scrollHeight);
+    setScrollTop(keepScroll ? prev : document.body.scrollHeight);
   }
-  function setMessages(arr){ current=arr; rerender(); }
+  function setMessages(arr){ current=arr; rerender(false); }
 </script></body></html>
 )HTML";
 
@@ -138,7 +151,6 @@ void ChatTab::PostInit()
 	m_status = XRCCTRL(*this, "Id_ChatStatus", wxStaticText);
 	m_input = XRCCTRL(*this, "Id_ChatInput", wxTextCtrl);
 	m_send = XRCCTRL(*this, "Id_ChatSend", wxButton);
-	m_timestamps = XRCCTRL(*this, "Id_ChatTimestamps", wxCheckBox);
 	m_players = XRCCTRL(*this, "Id_ChatPlayers", wxAdvancedListCtrl);
 
 	// Build the scrollback web view into its host panel. Prefer the Edge
@@ -183,13 +195,8 @@ void ChatTab::PostInit()
 	m_players->InsertColumn(1, "Status", wxLIST_FORMAT_LEFT, 64);
 	m_players->Bind(wxEVT_LIST_ITEM_RIGHT_CLICK, &ChatTab::OnPlayerRightClick, this);
 
-	wxFileConfig cfg;
-	cfg.Read(kShowTimestampsKey, &m_showTimestamps, false);
-	m_timestamps->SetValue(m_showTimestamps);
-
 	m_send->Bind(wxEVT_BUTTON, &ChatTab::OnSend, this);
 	m_input->Bind(wxEVT_TEXT_ENTER, &ChatTab::OnEnter, this);
-	m_timestamps->Bind(wxEVT_CHECKBOX, &ChatTab::OnToggleTimestamps, this);
 
 	m_input->Enable(false);
 	m_send->Enable(false);
@@ -231,16 +238,6 @@ void ChatTab::OnEnter(wxCommandEvent& WXUNUSED(event))
 	SendCurrent();
 }
 
-void ChatTab::OnToggleTimestamps(wxCommandEvent& WXUNUSED(event))
-{
-	m_showTimestamps = m_timestamps->GetValue();
-	wxFileConfig cfg;
-	cfg.Write(kShowTimestampsKey, m_showTimestamps);
-	cfg.Flush();
-	if (m_controller)
-		RenderMessages(m_controller->State());
-}
-
 void ChatTab::SendCurrent()
 {
 	if (!m_controller)
@@ -255,7 +252,8 @@ void ChatTab::SendCurrent()
 	// The message echoes back via GlobalMessageReceived, so don't render it here.
 }
 
-wxString ChatTab::FormatTimestamp(const std::string& isoUtc) const
+wxString ChatTab::FormatTimestamp(const std::string& isoUtc, bool use24Hour,
+                                  bool showSeconds) const
 {
 	if (isoUtc.size() < 19)
 		return wxEmptyString;
@@ -265,7 +263,14 @@ wxString ChatTab::FormatTimestamp(const std::string& isoUtc) const
 	if (!t.ParseISOCombined(s, 'T'))
 		return wxEmptyString;
 	t.MakeFromTimezone(wxDateTime::UTC); // interpret components as UTC -> local
-	return t.Format("%H:%M");
+
+	// %H = 24-hour, %I = 12-hour (with %p AM/PM). Seconds are optional.
+	wxString fmt;
+	if (use24Hour)
+		fmt = showSeconds ? "%H:%M:%S" : "%H:%M";
+	else
+		fmt = showSeconds ? "%I:%M:%S %p" : "%I:%M %p";
+	return t.Format(fmt);
 }
 
 void ChatTab::Refresh()
@@ -301,6 +306,21 @@ void ChatTab::RenderMessages(const SocialState& state)
 	if (!m_webReady)
 		return; // OnWebLoaded() will render once the page is ready
 
+	// Read the chat display options fresh so a change in the settings dialog takes
+	// effect on the next render. Profanity filtering defaults on, timestamps off,
+	// 24-hour clock on, seconds off.
+	bool filterProfanity = true;
+	bool showTimestamps = false;
+	bool use24Hour = true;
+	bool showSeconds = false;
+	{
+		wxFileConfig cfg;
+		cfg.Read(FILTERPROFANITY, &filterProfanity, ODA_UIFILTERPROFANITY);
+		cfg.Read(SHOWCHATTIMESTAMPS, &showTimestamps, ODA_UISHOWCHATTIMESTAMPS);
+		cfg.Read(CHAT24HOURTIME, &use24Hour, ODA_UICHAT24HOURTIME);
+		cfg.Read(CHATSHOWSECONDS, &showSeconds, ODA_UICHATSHOWSECONDS);
+	}
+
 	std::string json = "[";
 	bool first = true;
 	for (const auto& line : state.chat)
@@ -310,12 +330,15 @@ void ChatTab::RenderMessages(const SocialState& state)
 		first = false;
 
 		const std::string user = line.authorUsername.empty() ? line.authorSubject : line.authorUsername;
-		const std::string ts = m_showTimestamps ? FormatTimestamp(line.sentAt).utf8_string() : std::string();
+		const std::string ts =
+		    showTimestamps ? FormatTimestamp(line.sentAt, use24Hour, showSeconds).utf8_string()
+		                   : std::string();
 		const bool blocked = state.IsBlocked(line.authorSubject);
+		const std::string text = filterProfanity ? CensorProfanity(line.text) : line.text;
 
 		json += "{\"id\":" + JsonStr(line.messageId);
 		json += ",\"user\":" + JsonStr(user);
-		json += ",\"text\":" + JsonStr(line.text);
+		json += ",\"text\":" + JsonStr(text);
 		json += ",\"ts\":" + JsonStr(ts);
 		json += ",\"blocked\":";
 		json += blocked ? "true" : "false";

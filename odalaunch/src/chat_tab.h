@@ -64,7 +64,6 @@ class ChatTab : public wxPanel
 	void SendCurrent();
 	void OnSend(wxCommandEvent& event);
 	void OnEnter(wxCommandEvent& event);
-	void OnToggleTimestamps(wxCommandEvent& event);
 	void OnWebLoaded(wxWebViewEvent& event);
 	void OnPlayerRightClick(wxListEvent& event); // Add Friend / Block-Unblock menu
 
@@ -73,7 +72,10 @@ class ChatTab : public wxPanel
 	// Run a script in the page: async (non-blocking) on Edge, sync on the legacy
 	// IE backend (which lacks RunScriptAsync). No-op until the page is ready.
 	void RunJs(const wxString& script);
-	wxString FormatTimestamp(const std::string& isoUtc) const; // "HH:MM" local, or empty
+	// Local time string for an ISO-UTC stamp, or empty on parse failure.
+	// use24Hour selects 24-hour vs 12-hour AM/PM; showSeconds adds seconds.
+	wxString FormatTimestamp(const std::string& isoUtc, bool use24Hour,
+	                         bool showSeconds) const;
 
 	SocialController* m_controller = nullptr;
 
@@ -82,11 +84,8 @@ class ChatTab : public wxPanel
 	bool m_isEdge = false;   // Edge backend in use -> RunScriptAsync; else RunScript
 	wxTextCtrl* m_input = nullptr;
 	wxButton* m_send = nullptr;
-	wxCheckBox* m_timestamps = nullptr;
 	wxStaticText* m_status = nullptr;
 	wxAdvancedListCtrl* m_players = nullptr;
-
-	bool m_showTimestamps = false;
 
 	// Subjects of the online-players list, in row order (the list is not
 	// sortable, so a clicked row index maps straight to a subject here).

@@ -61,6 +61,10 @@ BEGIN_EVENT_TABLE(dlgConfig,wxDialog)
 	// Misc events
 	EVT_CHECKBOX(XRCID("Id_ChkCtrlGetListOnStart"), dlgConfig::OnCheckedBox)
 	EVT_CHECKBOX(XRCID("Id_ChkCtrlShowBlockedServers"), dlgConfig::OnCheckedBox)
+	EVT_CHECKBOX(XRCID("Id_ChkFilterProfanity"), dlgConfig::OnCheckedBox)
+	EVT_CHECKBOX(XRCID("Id_ChkShowChatTimestamps"), dlgConfig::OnCheckedBox)
+	EVT_CHECKBOX(XRCID("Id_ChkChat24HourTime"), dlgConfig::OnCheckedBox)
+	EVT_CHECKBOX(XRCID("Id_ChkChatShowSeconds"), dlgConfig::OnCheckedBox)
 	EVT_CHECKBOX(XRCID("Id_ChkCtrlCheckForUpdates"), dlgConfig::OnCheckedBox)
 	EVT_CHECKBOX(XRCID("Id_ChkCtrlEnableBroadcasts"), dlgConfig::OnCheckedBox)
 	//EVT_CHECKBOX(XRCID("Id_ChkCtrlLoadChatOnStart"), dlgConfig::OnCheckedBox)
@@ -99,6 +103,10 @@ dlgConfig::dlgConfig(wxWindow* parent, wxWindowID id) :
 
 	m_ChkCtrlGetListOnStart = XRCCTRL(*this, "Id_ChkCtrlGetListOnStart", wxCheckBox);
 	m_ChkCtrlShowBlockedServers = XRCCTRL(*this, "Id_ChkCtrlShowBlockedServers", wxCheckBox);
+	m_ChkFilterProfanity = XRCCTRL(*this, "Id_ChkFilterProfanity", wxCheckBox);
+	m_ChkShowChatTimestamps = XRCCTRL(*this, "Id_ChkShowChatTimestamps", wxCheckBox);
+	m_ChkChat24HourTime = XRCCTRL(*this, "Id_ChkChat24HourTime", wxCheckBox);
+	m_ChkChatShowSeconds = XRCCTRL(*this, "Id_ChkChatShowSeconds", wxCheckBox);
 	#if !ODALAUNCH_USE_WEB_REQUEST
 	XRCSIZERITEM(*this, "Id_StBxSizerUpdates")->Show(false);
 	#endif
@@ -170,6 +178,16 @@ void dlgConfig::Show()
 void dlgConfig::OnCheckedBox(wxCommandEvent& event)
 {
 	UserChangedSetting = true;
+
+	// The timestamp-format options only matter when timestamps are shown.
+	UpdateChatTimestampOptionsEnabled();
+}
+
+void dlgConfig::UpdateChatTimestampOptionsEnabled()
+{
+	const bool on = m_ChkShowChatTimestamps->GetValue();
+	m_ChkChat24HourTime->Enable(on);
+	m_ChkChatShowSeconds->Enable(on);
 }
 
 void dlgConfig::OnFileDirChange(wxFileDirPickerEvent& event)
@@ -444,6 +462,7 @@ void dlgConfig::LoadSettings()
 
 	bool UseBroadcast;
 	bool GetListOnStart, ShowBlockedServers, LoadChatOnLS, CheckForUpdates;
+	bool FilterProfanity, ShowChatTimestamps, Chat24HourTime, ChatShowSeconds;
 	bool FlashTaskBar, PlaySystemBell, PlaySoundFile, HighlightServers;
 	bool CustomServersHighlight;
 
@@ -458,6 +477,10 @@ void dlgConfig::LoadSettings()
 	ConfigInfo.Read(GETLISTONSTART, &GetListOnStart, ODA_UIGETLISTONSTART);
 	ConfigInfo.Read(SHOWBLOCKEDSERVERS, &ShowBlockedServers,
 	                ODA_UISHOWBLOCKEDSERVERS);
+	ConfigInfo.Read(FILTERPROFANITY, &FilterProfanity, ODA_UIFILTERPROFANITY);
+	ConfigInfo.Read(SHOWCHATTIMESTAMPS, &ShowChatTimestamps, ODA_UISHOWCHATTIMESTAMPS);
+	ConfigInfo.Read(CHAT24HOURTIME, &Chat24HourTime, ODA_UICHAT24HOURTIME);
+	ConfigInfo.Read(CHATSHOWSECONDS, &ChatShowSeconds, ODA_UICHATSHOWSECONDS);
     ConfigInfo.Read(CHECKFORUPDATES, &CheckForUpdates,
 	                ODA_UIAUTOCHECKFORUPDATES);
 	ConfigInfo.Read(DELIMWADPATHS, &DelimWadPaths, OdaGetDataDir());
@@ -487,6 +510,11 @@ void dlgConfig::LoadSettings()
 	m_ChkCtrlEnableBroadcasts->SetValue(UseBroadcast);
 	m_ChkCtrlGetListOnStart->SetValue(GetListOnStart);
 	m_ChkCtrlShowBlockedServers->SetValue(ShowBlockedServers);
+	m_ChkFilterProfanity->SetValue(FilterProfanity);
+	m_ChkShowChatTimestamps->SetValue(ShowChatTimestamps);
+	m_ChkChat24HourTime->SetValue(Chat24HourTime);
+	m_ChkChatShowSeconds->SetValue(ChatShowSeconds);
+	UpdateChatTimestampOptionsEnabled();
 	m_ChkCtrlCheckForUpdates->SetValue(CheckForUpdates);
 	//m_ChkCtrlLoadChatOnLS->SetValue(LoadChatOnLS);
 	m_ChkCtrlFlashTaskBar->SetValue(FlashTaskBar);
@@ -554,6 +582,10 @@ void dlgConfig::SaveSettings()
 	ConfigInfo.Write(EXTRACMDLINEARGS, m_TxtCtrlExtraCmdLineArgs->GetValue());
 	ConfigInfo.Write(GETLISTONSTART, m_ChkCtrlGetListOnStart->GetValue());
 	ConfigInfo.Write(SHOWBLOCKEDSERVERS, m_ChkCtrlShowBlockedServers->GetValue());
+	ConfigInfo.Write(FILTERPROFANITY, m_ChkFilterProfanity->GetValue());
+	ConfigInfo.Write(SHOWCHATTIMESTAMPS, m_ChkShowChatTimestamps->GetValue());
+	ConfigInfo.Write(CHAT24HOURTIME, m_ChkChat24HourTime->GetValue());
+	ConfigInfo.Write(CHATSHOWSECONDS, m_ChkChatShowSeconds->GetValue());
 	ConfigInfo.Write(CHECKFORUPDATES, m_ChkCtrlCheckForUpdates->GetValue());
 	ConfigInfo.Write(DELIMWADPATHS, DelimWadPaths);
 	ConfigInfo.Write(ODAMEX_DIRECTORY, m_DirCtrlChooseOdamexPath->GetPath());

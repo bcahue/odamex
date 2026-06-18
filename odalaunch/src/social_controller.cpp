@@ -372,8 +372,19 @@ void SocialController::SendFriendRequestByUsername(
 				message = "Unable to send a request to that player.";
 			else if (err == "FriendLimitReached")
 				message = "Your friends list is full.";
+			else if (r.status == 400)
+				// 400 with no mapped error code is a validation rejection
+				// (e.g. an empty/oversized name) -- the body is a problem-details
+				// object, not our {"error":...} shape.
+				message = "That username isn't valid.";
+			else if (r.status == 401 || r.status == 403)
+				message = "You're not signed in, or aren't allowed to do that.";
+			else if (r.status == 0)
+				message = "Couldn't reach the server.";
 			else
-				message = "Couldn't send the friend request.";
+				message = wxString::Format("Couldn't send the friend request (error %d).",
+				                           r.status)
+				              .utf8_string();
 		}
 
 		const bool ok = r.ok;

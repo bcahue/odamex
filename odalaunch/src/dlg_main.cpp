@@ -1295,6 +1295,12 @@ void dlgMain::OnOpenSettingsDialog(wxCommandEvent& event)
 	if(config_dlg)
 		config_dlg->Show();
 
+	// The settings dialog is modal (its Show() calls ShowModal()), so this runs
+	// after it closes: re-render the chat so a profanity-filter toggle takes
+	// effect immediately on the existing scrollback. No-op when signed out.
+	if(m_ChatPanel)
+		m_ChatPanel->Refresh();
+
 	// Restart the ART
 	{
 		wxFileConfig ConfigInfo;
