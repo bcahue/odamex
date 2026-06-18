@@ -65,6 +65,13 @@ struct SocialChatLine
 	bool deleted = false;
 };
 
+struct SocialBlocked
+{
+	std::string subject;
+	std::string username;    // falls back to the subject when unknown
+	std::string blockedSince; // ISO-8601 UTC
+};
+
 class SocialState
 {
   public:
@@ -82,7 +89,8 @@ class SocialState
 	std::vector<SocialRequest> incoming;
 	std::vector<SocialRequest> outgoing;
 	std::vector<SocialParticipant> participants;
-	std::set<std::string> blocked;
+	std::set<std::string> blocked;              // subjects only; fast IsBlocked lookups
+	std::vector<SocialBlocked> blockedPlayers;  // same set, with usernames, for the Players tab
 	std::vector<SocialChatLine> chat; // newest last; capped by the controller
 	int slowModeSeconds = 0;
 

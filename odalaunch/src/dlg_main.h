@@ -75,6 +75,7 @@ wxDECLARE_EVENT(wxEVT_THREAD_WORKER_SIGNAL, wxCommandEvent);
 
 class ChatTab;
 class FriendsTab;
+class PlayersTab;
 
 class dlgMain : public wxFrame, wxThreadHelper
 {
@@ -161,6 +162,11 @@ protected:
 	// first ticket synchronously. Leaves m_TicketRefresher null on failure.
 	void StartTicketRefresher(int serverId);
 
+	// Aggregate every player across all queried servers (QServer) into the
+	// Players tab's "community server players" list. Called when a refresh
+	// completes; safe to call before sign-in (it's server-browser data).
+	void RefreshCommunityPlayers();
+
 	LstOdaServerList* m_LstCtrlServers;
 	LstOdaPlayerList* m_LstCtrlPlayers;
 	LstOdaSrvDetails* m_LstOdaSrvDetails;
@@ -183,6 +189,10 @@ protected:
 	// Global-chat tab — an XRC-subclassed ChatTab (slice L3). Hosts both the
 	// chat scrollback and the online-players list.
 	ChatTab* m_ChatPanel;
+
+	// Players tab — an XRC-subclassed PlayersTab: blocked players (with Unblock)
+	// and, once matchmaking lands, recently-played-with players.
+	PlayersTab* m_PlayersTab;
 
 	wxStatusBar* m_StatusBar;
 	wxProcess* m_Process;

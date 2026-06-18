@@ -86,6 +86,7 @@
 #include "ticket_refresher.h"
 #include "chat_tab.h"
 #include "friends_tab.h"
+#include "players_tab.h"
 
 using namespace odalpapi;
 
@@ -246,6 +247,10 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 	m_ChatPanel = XRCCTRL(*this, "Id_PnlChatTab", ChatTab);
 	if(m_ChatPanel)
 		m_ChatPanel->PostInit();
+
+	m_PlayersTab = XRCCTRL(*this, "Id_PnlPlayersTab", PlayersTab);
+	if(m_PlayersTab)
+		m_PlayersTab->PostInit();
 
 	#if defined(__linux__) && wxCHECK_VERSION(3, 3, 0)
 	const auto res = wxFileConfig::MigrateLocalFile("odalaunch", wxCONFIG_USE_XDG, wxCONFIG_USE_LOCAL_FILE);
@@ -1153,6 +1158,9 @@ void dlgMain::OnMonitorSignal(wxCommandEvent& event)
 		m_LstOdaSrvDetails->LoadDetailsFromServer(ThisServer);
 
 		TotalPlayers += ThisServer.Info.Players.size();
+
+		// Keep the Players-tab community list in step with this server's refresh.
+		RefreshCommunityPlayers();
 	}
 	break;
 
@@ -1184,6 +1192,9 @@ void dlgMain::OnMonitorSignal(wxCommandEvent& event)
 		m_LstCtrlServers->HeaderUsable(true);
 
 		m_SrchCtrlGlobal->Enable(true);
+
+		// Roll every server's players up into the Players tab's community list.
+		RefreshCommunityPlayers();
 
 		// User notification of players online (including spectators)
 		if(TotalPlayers)
@@ -1597,6 +1608,32 @@ void dlgMain::StartTicketRefresher(int serverId)
 	}
 }
 
+void dlgMain::RefreshCommunityPlayers()
+{
+	if(!m_PlayersTab)
+		return;
+
+	std::vector<PlayersTab::CommunityPlayer> players;
+	const size_t serverCount = MServer.GetServerCount();
+	if(QServer)
+	{
+		for(size_t s = 0; s < serverCount; ++s)
+		{
+			const Server& srv = QServer[s];
+			const wxString serverName = stdstr_towxstr(srv.Info.Name);
+			for(const auto& pl : srv.Info.Players)
+			{
+				PlayersTab::CommunityPlayer cp;
+				cp.name = stdstr_towxstr(pl.Name);
+				cp.server = serverName;
+				cp.ping = pl.Ping;
+				players.push_back(std::move(cp));
+			}
+		}
+	}
+	m_PlayersTab->SetCommunityPlayers(std::move(players));
+}
+
 void dlgMain::LaunchGame(const wxString& Address, const wxString& ODX_Path,
                          const wxString& waddirs, const wxString& Password,
                          int authServerId)
@@ -1832,11 +1869,15 @@ void dlgMain::UpdateAccountStatus()
 				m_ChatPanel->Refresh();
 			if(m_FriendsTab)
 				m_FriendsTab->Refresh();
+			if(m_PlayersTab)
+				m_PlayersTab->Refresh();
 		});
 		if(m_ChatPanel)
 			m_ChatPanel->SetController(m_Social.get());
 		if(m_FriendsTab)
 			m_FriendsTab->SetController(m_Social.get());
+		if(m_PlayersTab)
+			m_PlayersTab->SetController(m_Social.get());
 		m_Social->Start();
 	}
 	else if(!signedIn && m_Social)
@@ -1845,6 +1886,8 @@ void dlgMain::UpdateAccountStatus()
 			m_ChatPanel->SetController(nullptr);
 		if(m_FriendsTab)
 			m_FriendsTab->SetController(nullptr);
+		if(m_PlayersTab)
+			m_PlayersTab->SetController(nullptr);
 		m_Social->Stop();
 		m_Social.reset();
 	}

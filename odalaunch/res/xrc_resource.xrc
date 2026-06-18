@@ -682,6 +682,59 @@
               </object>
             </object>
           </object>
+          <object class="notebookpage">
+            <label>Players</label>
+            <object class="wxPanel" subclass="PlayersTab" name="Id_PnlPlayersTab">
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <flag>wxLEFT|wxRIGHT|wxTOP</flag>
+                  <border>4</border>
+                  <object class="wxStaticText" name="Id_BlockedHeader">
+                    <label>Blocked players</label>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>4</border>
+                  <object class="wxListCtrl" name="Id_BlockedList" subclass="wxAdvancedListCtrl">
+                    <style>wxLC_REPORT|wxLC_SINGLE_SEL</style>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <flag>wxLEFT|wxRIGHT|wxTOP</flag>
+                  <border>4</border>
+                  <object class="wxStaticText" name="Id_RecentHeader">
+                    <label>Recently played with</label>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>4</border>
+                  <object class="wxListCtrl" name="Id_RecentPlayers" subclass="wxAdvancedListCtrl">
+                    <style>wxLC_REPORT|wxLC_SINGLE_SEL</style>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <flag>wxLEFT|wxRIGHT|wxTOP</flag>
+                  <border>4</border>
+                  <object class="wxStaticText" name="Id_CommunityHeader">
+                    <label>Community server players</label>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>2</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>4</border>
+                  <object class="wxListCtrl" name="Id_CommunityPlayers" subclass="wxAdvancedListCtrl">
+                    <style>wxLC_REPORT|wxLC_SINGLE_SEL</style>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
         </object>
       </object>
     </object>

@@ -97,11 +97,17 @@ void ParseRequests(const std::string& body, std::vector<SocialRequest>& out)
 	}
 }
 
-void ParseBlocks(const std::string& body, std::set<std::string>& out)
+void ParseBlocks(const std::string& body, std::vector<SocialBlocked>& out)
 {
 	struct mg_str j = mg_str_n(body.data(), body.size());
 	for (int i = 0; Has(j, "blocks", i, "subject"); ++i)
-		out.insert(GetStr(j, P("blocks", i, "subject")));
+	{
+		SocialBlocked b;
+		b.subject = GetStr(j, P("blocks", i, "subject"));
+		b.username = GetStr(j, P("blocks", i, "username")); // empty if the server didn't resolve one
+		b.blockedSince = GetStr(j, P("blocks", i, "blockedSince"));
+		out.push_back(std::move(b));
+	}
 }
 
 void ParseParticipants(const std::string& body, std::vector<SocialParticipant>& out)
@@ -499,10 +505,13 @@ void SocialController::DoRefreshAll()
 	if (orr.ok)
 		ParseRequests(orr.body, outgoing);
 
-	std::set<std::string> blocked;
+	std::vector<SocialBlocked> blockedPlayers;
 	ApiClient::Response br = m_api->GetBlocks();
 	if (br.ok)
-		ParseBlocks(br.body, blocked);
+		ParseBlocks(br.body, blockedPlayers);
+	std::set<std::string> blocked;
+	for (const SocialBlocked& b : blockedPlayers)
+		blocked.insert(b.subject);
 
 	std::vector<SocialParticipant> participants;
 	ApiClient::Response pr = m_api->GetParticipants();
@@ -516,11 +525,13 @@ void SocialController::DoRefreshAll()
 
 	Marshal([this, friends = std::move(friends), incoming = std::move(incoming),
 	         outgoing = std::move(outgoing), blocked = std::move(blocked),
+	         blockedPlayers = std::move(blockedPlayers),
 	         participants = std::move(participants), chat = std::move(chat)]() mutable {
 		m_state.friends = std::move(friends);
 		m_state.incoming = std::move(incoming);
 		m_state.outgoing = std::move(outgoing);
 		m_state.blocked = std::move(blocked);
+		m_state.blockedPlayers = std::move(blockedPlayers);
 		m_state.participants = std::move(participants);
 		m_state.chat = std::move(chat);
 		m_state.NotifyChanged();
