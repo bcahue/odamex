@@ -67,6 +67,14 @@ class ChatTab : public wxPanel
 	void OnWebLoaded(wxWebViewEvent& event);
 	void OnPlayerRightClick(wxListEvent& event); // Add Friend / Block-Unblock menu
 
+	// The page posts tab-delimited commands here: "open\t<url>" (open a clicked
+	// chat link in the system browser) and "menu\t<sub>" (show the Friend/Block
+	// menu for a right-clicked username). Edge backend only.
+	void OnWebScriptMessage(wxWebViewEvent& event);
+	// Friend/Block(/Unblock) menu for a subject, shared by the players list and
+	// the chat username right-click.
+	void ShowUserContextMenu(const std::string& sub);
+
 	void RenderMessages(const SocialState& state);
 	void RebuildPlayers(const SocialState& state);
 	// Run a script in the page: async (non-blocking) on Edge, sync on the legacy

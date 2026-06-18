@@ -31,6 +31,7 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/utils.h>
 #include <wx/webview.h>
 #include <wx/xrc/xmlres.h>
 
@@ -49,69 +50,12 @@ wxIMPLEMENT_DYNAMIC_CLASS(ChatTab, wxPanel);
 
 namespace
 {
-// The page shell. Colours (@BG@/@FG@) are substituted from the system theme so
-// it matches light/dark. All user content is written with textContent (never
-// innerHTML), so chat text cannot inject markup. Block reveal is local JS.
-const char* const kChatHtml = R"HTML(<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">
-<style>
-  html,body{margin:0;padding:0;height:100%;}
-  body{font-family:'Segoe UI','Segoe UI Emoji','Segoe UI Symbol',sans-serif;font-size:13px;background:@BG@;color:@FG@;
-       padding:4px 6px;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;}
-  .msg{margin:1px 0;line-height:1.35;word-wrap:break-word;overflow-wrap:anywhere;}
-  .user{font-weight:bold;}
-  .ts{opacity:0.55;}
-  .sys{opacity:0.6;font-style:italic;}
-  .blocked{color:#b06a6a;font-style:italic;cursor:pointer;}
-  .hide{color:#b06a6a;font-style:italic;cursor:pointer;opacity:0.8;}
-</style></head>
-<body><div id="log"></div>
-<script>
-  var current = [];
-  var revealed = {};
-  function buildMsg(m){
-    var div = document.createElement('div');
-    if(m.deleted){ div.className='msg sys'; div.textContent='[message removed by a moderator]'; return div; }
-    div.className='msg';
-    if(m.ts){ var s=document.createElement('span'); s.className='ts'; s.textContent='['+m.ts+'] '; div.appendChild(s); }
-    if(m.blocked && !revealed[m.id]){
-      div.className='msg blocked';
-      var b=document.createElement('span'); b.textContent='[blocked user — click to show]'; div.appendChild(b);
-      div.onclick=function(){ revealed[m.id]=true; rerender(true); };
-      return div;
-    }
-    var u=document.createElement('span'); u.className='user'; u.textContent=m.user+': '; div.appendChild(u);
-    var t=document.createElement('span'); t.textContent=m.text; div.appendChild(t);
-    if(m.blocked){
-      // Revealed blocked message: offer a link to collapse it again.
-      var h=document.createElement('span'); h.className='hide'; h.textContent=' [hide]';
-      h.onclick=function(){ revealed[m.id]=false; rerender(true); };
-      div.appendChild(h);
-    }
-    return div;
-  }
-  function getScrollTop(){
-    return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-  }
-  function setScrollTop(y){
-    // The scroll container differs between backends, so set every candidate;
-    // the non-scrolling ones clamp harmlessly.
-    window.scrollTo(0, y);
-    document.documentElement.scrollTop = y;
-    document.body.scrollTop = y;
-  }
-  // keepScroll: hold the current position (e.g. reveal/hide a blocked message)
-  // instead of jumping to the bottom (the default, for newly arrived messages).
-  function rerender(keepScroll){
-    var log=document.getElementById('log');
-    var prev=getScrollTop();
-    log.innerHTML='';
-    for(var i=0;i<current.length;i++) log.appendChild(buildMsg(current[i]));
-    setScrollTop(keepScroll ? prev : document.body.scrollHeight);
-  }
-  function setMessages(arr){ current=arr; rerender(false); }
-</script></body></html>
-)HTML";
+// The page shell lives in chat_view.inc (a single raw-string literal) so the
+// markup can grow on its own. Colours (@BG@/@FG@) are substituted from the
+// system theme before load; see that file for the JS contract.
+const char* const kChatHtml =
+#include "chat_view.inc"
+    ;
 
 // JSON string literal (with quotes), escaping what a JS/JSON string requires.
 std::string JsonStr(const std::string& s)
@@ -174,6 +118,14 @@ void ChatTab::PostInit()
 	m_web = wxWebView::New(host, wxID_ANY, wxWebViewDefaultURLStr, wxDefaultPosition,
 	                       wxDefaultSize, backend);
 	m_web->EnableContextMenu(false);
+
+	// Let the page hand us a username's subject on right-click so we can show the
+	// same Friend/Block menu as the players list. Must be registered before the
+	// page loads. Only the Edge backend supports script message handlers; where
+	// it isn't available the page's window.oda check makes it a no-op.
+	if (m_web->AddScriptMessageHandler("oda"))
+		m_web->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &ChatTab::OnWebScriptMessage, this);
+
 	wxBoxSizer* hostSizer = new wxBoxSizer(wxVERTICAL);
 	hostSizer->Add(m_web, 1, wxEXPAND);
 	host->SetSizer(hostSizer);
@@ -338,6 +290,7 @@ void ChatTab::RenderMessages(const SocialState& state)
 
 		json += "{\"id\":" + JsonStr(line.messageId);
 		json += ",\"user\":" + JsonStr(user);
+		json += ",\"sub\":" + JsonStr(line.authorSubject);
 		json += ",\"text\":" + JsonStr(text);
 		json += ",\"ts\":" + JsonStr(ts);
 		json += ",\"blocked\":";
@@ -407,12 +360,35 @@ void ChatTab::RebuildPlayers(const SocialState& state)
 
 void ChatTab::OnPlayerRightClick(wxListEvent& event)
 {
-	if (!m_controller)
-		return;
 	const long row = event.GetIndex();
 	if (row < 0 || row >= static_cast<long>(m_playerSubjects.size()))
 		return;
-	const std::string sub = m_playerSubjects[row];
+	ShowUserContextMenu(m_playerSubjects[row]);
+}
+
+void ChatTab::OnWebScriptMessage(wxWebViewEvent& event)
+{
+	// Tab-delimited command from the page (see chat_view.inc):
+	//   "open\t<url>" -> open a clicked chat link in the system browser
+	//   "menu\t<sub>" -> show the Friend/Block menu for a right-clicked username
+	const wxString msg = event.GetString();
+	if (msg.StartsWith("open\t"))
+	{
+		const wxString url = msg.Mid(5);
+		// The page only ever builds http(s) targets; re-check before launching.
+		if (url.StartsWith("http://") || url.StartsWith("https://"))
+			wxLaunchDefaultBrowser(url);
+	}
+	else if (msg.StartsWith("menu\t"))
+	{
+		ShowUserContextMenu(msg.Mid(5).utf8_string());
+	}
+}
+
+void ChatTab::ShowUserContextMenu(const std::string& sub)
+{
+	if (!m_controller || sub.empty())
+		return;
 
 	// No friend/block actions on yourself.
 	if (!m_selfSubject.empty() && sub == m_selfSubject)
