@@ -100,6 +100,7 @@ protected:
 	wxCheckBox* m_ChkCtrlHighlightServerLines;
 	wxCheckBox* m_ChkCtrlHighlightCustomServers;
 	wxCheckBox* m_ChkCtrlkAutoServerRefresh;
+	wxCheckBox* m_ChkCtrlMinimizeToTray;
 
 	wxListBox* m_LstCtrlWadDirectories;
 

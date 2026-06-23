@@ -30,11 +30,11 @@
 #include <string>
 #include <vector>
 
+#include "chat_webview.h"
+
 class SocialController;
 class SocialState;
 class wxAdvancedListCtrl;
-class wxWebView;
-class wxWebViewEvent;
 class wxTextCtrl;
 class wxButton;
 class wxCheckBox;
@@ -64,22 +64,14 @@ class ChatTab : public wxPanel
 	void SendCurrent();
 	void OnSend(wxCommandEvent& event);
 	void OnEnter(wxCommandEvent& event);
-	void OnWebLoaded(wxWebViewEvent& event);
 	void OnPlayerRightClick(wxListEvent& event); // Add Friend / Block-Unblock menu
 
-	// The page posts tab-delimited commands here: "open\t<url>" (open a clicked
-	// chat link in the system browser) and "menu\t<sub>" (show the Friend/Block
-	// menu for a right-clicked username). Edge backend only.
-	void OnWebScriptMessage(wxWebViewEvent& event);
 	// Friend/Block(/Unblock) menu for a subject, shared by the players list and
-	// the chat username right-click.
+	// the chat username right-click (the latter via the web view's OnUserMenu).
 	void ShowUserContextMenu(const std::string& sub);
 
 	void RenderMessages(const SocialState& state);
 	void RebuildPlayers(const SocialState& state);
-	// Run a script in the page: async (non-blocking) on Edge, sync on the legacy
-	// IE backend (which lacks RunScriptAsync). No-op until the page is ready.
-	void RunJs(const wxString& script);
 	// Local time string for an ISO-UTC stamp, or empty on parse failure.
 	// use24Hour selects 24-hour vs 12-hour AM/PM; showSeconds adds seconds.
 	wxString FormatTimestamp(const std::string& isoUtc, bool use24Hour,
@@ -87,9 +79,7 @@ class ChatTab : public wxPanel
 
 	SocialController* m_controller = nullptr;
 
-	wxWebView* m_web = nullptr;
-	bool m_webReady = false; // SetPage is async; only script once the page is loaded
-	bool m_isEdge = false;   // Edge backend in use -> RunScriptAsync; else RunScript
+	ChatWebView m_chat;      // HTML scrollback (shared with the party-chat tab)
 	wxTextCtrl* m_input = nullptr;
 	wxButton* m_send = nullptr;
 	wxStaticText* m_status = nullptr;

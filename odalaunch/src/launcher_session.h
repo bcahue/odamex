@@ -81,6 +81,11 @@ class LauncherSession
 	// Returns empty on any parse failure.
 	static wxString UsernameFromToken(const wxString& token);
 
+	// Best-effort decode of the `sub` (subject) claim from a session JWT — the
+	// Keycloak subject the party/social hubs identify the player by. Returns
+	// empty on any parse failure.
+	static wxString SubjectFromToken(const wxString& token);
+
 	// Best-effort decode of the `exp` (seconds since epoch) claim. Returns 0 if
 	// absent/unparseable (caller should treat 0 as "unknown", not "expired").
 	static int64_t ExpiryFromToken(const wxString& token);

@@ -132,6 +132,19 @@ wxString LauncherSession::UsernameFromToken(const wxString& token)
 	return wxString::FromUTF8(v);
 }
 
+wxString LauncherSession::SubjectFromToken(const wxString& token)
+{
+	const std::string payload = DecodeJwtPayload(token);
+	if (payload.empty())
+		return wxString();
+
+	struct mg_str j = mg_str_n(payload.data(), payload.size());
+	const std::string v = JsonGetStr(j, "$.sub");
+	if (v.empty())
+		return wxString();
+	return wxString::FromUTF8(v);
+}
+
 int64_t LauncherSession::ExpiryFromToken(const wxString& token)
 {
 	const std::string payload = DecodeJwtPayload(token);

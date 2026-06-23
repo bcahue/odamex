@@ -88,8 +88,35 @@ class SocialController
 	void Block(const std::string& subject);
 	void Unblock(const std::string& subject);
 
+	// Party actions (all over the hub). `done` (where present) is marshalled to
+	// the UI thread with the outcome + a user-facing message.
+	void InviteToParty(const std::string& subject,
+	                   std::function<void(bool ok, const std::string& message)> done);
+	void AcceptPartyInvite(const std::string& inviteId);
+	void DeclinePartyInvite(const std::string& inviteId);
+	void LeaveParty();
+	void KickFromParty(const std::string& subject);
+	void PromoteToLeader(const std::string& subject);
+	void SendPartyMessage(const std::string& text);
+
+	// Fired on the UI thread when a *new* party invite arrives (after dedup),
+	// carrying a display name (username, or the subject when unknown). The frame
+	// uses it to raise a tray balloon plus the configured taskbar-flash/bell/sound
+	// notification.
+	void SetOnPartyInvite(std::function<void(const std::string& inviterName)> cb)
+	{
+		m_onPartyInvite = std::move(cb);
+	}
+
   private:
 	void WireHubEvents();
+	void WirePartyEvents();
+	// Best-effort username for a subject from known friends/participants; falls
+	// back to the subject string when unknown.
+	std::string ResolveUsername(const std::string& subject) const;
+	// Rebuild m_state.party.members from a snapshot's subjects (UI thread).
+	void ApplyPartySnapshot(const std::string& partyId, const std::string& leaderSubject,
+	                        const std::vector<std::string>& memberSubjects);
 	void WorkerLoop();
 	void Enqueue(std::function<void()> work); // run on the worker thread
 	void Marshal(std::function<void()> uiWork); // run on the UI thread, alive-guarded
@@ -100,6 +127,9 @@ class SocialController
 	std::unique_ptr<PartyClient> m_hub;
 	SocialState m_state;
 	wxEvtHandler* m_ui;
+
+	// Optional UI-thread notifier for a newly-arrived party invite (see setter).
+	std::function<void(const std::string& inviterName)> m_onPartyInvite;
 
 	std::shared_ptr<std::atomic<bool>> m_alive;
 

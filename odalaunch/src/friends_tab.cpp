@@ -185,15 +185,26 @@ void FriendsTab::OnFriendRightClick(wxListEvent& event)
 		return;
 	const std::string sub = m_friendSubjects[row];
 
-	const int kRemove = wxID_HIGHEST + 1;
-	const int kBlock = wxID_HIGHEST + 2;
+	const int kInvite = wxID_HIGHEST + 1;
+	const int kRemove = wxID_HIGHEST + 2;
+	const int kBlock = wxID_HIGHEST + 3;
 
 	wxMenu menu;
+	menu.Append(kInvite, "Invite to Party");
 	menu.Append(kRemove, "Remove Friend");
 	menu.Append(kBlock, "Block");
 
 	const int choice = GetPopupMenuSelectionFromUser(menu);
-	if (choice == kRemove)
+	if (choice == kInvite)
+	{
+		if (m_addStatus)
+			m_addStatus->SetLabel("Sending party invite…");
+		m_controller->InviteToParty(sub, [this](bool /*ok*/, const std::string& message) {
+			if (m_addStatus)
+				m_addStatus->SetLabel(wxString::FromUTF8(message));
+		});
+	}
+	else if (choice == kRemove)
 		m_controller->RemoveFriend(sub);
 	else if (choice == kBlock)
 		m_controller->Block(sub); // server cascade also drops the friendship

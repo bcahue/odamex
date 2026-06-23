@@ -32,14 +32,7 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/utils.h>
-#include <wx/webview.h>
 #include <wx/xrc/xmlres.h>
-
-#ifdef __WXMSW__
-#include <wx/msw/webview_ie.h>
-#endif
-
-#include <cstdio>
 
 #include "lst_custom.h"
 #include "oda_defs.h"
@@ -47,46 +40,6 @@
 #include "social_controller.h"
 
 wxIMPLEMENT_DYNAMIC_CLASS(ChatTab, wxPanel);
-
-namespace
-{
-// The page shell lives in chat_view.inc (a single raw-string literal) so the
-// markup can grow on its own. Colours (@BG@/@FG@) are substituted from the
-// system theme before load; see that file for the JS contract.
-const char* const kChatHtml =
-#include "chat_view.inc"
-    ;
-
-// JSON string literal (with quotes), escaping what a JS/JSON string requires.
-std::string JsonStr(const std::string& s)
-{
-	std::string out = "\"";
-	for (char c : s)
-	{
-		switch (c)
-		{
-		case '"': out += "\\\""; break;
-		case '\\': out += "\\\\"; break;
-		case '\n': out += "\\n"; break;
-		case '\r': out += "\\r"; break;
-		case '\t': out += "\\t"; break;
-		default:
-			if (static_cast<unsigned char>(c) < 0x20)
-			{
-				char buf[8];
-				std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(static_cast<unsigned char>(c)));
-				out += buf;
-			}
-			else
-			{
-				out += c;
-			}
-		}
-	}
-	out += "\"";
-	return out;
-}
-} // namespace
 
 ChatTab::ChatTab() = default;
 
@@ -97,48 +50,17 @@ void ChatTab::PostInit()
 	m_send = XRCCTRL(*this, "Id_ChatSend", wxButton);
 	m_players = XRCCTRL(*this, "Id_ChatPlayers", wxAdvancedListCtrl);
 
-	// Build the scrollback web view into its host panel. Prefer the Edge
-	// (Chromium) backend when the wx build provides it; otherwise the default
-	// backend is used (legacy on Windows until wx is rebuilt with Edge).
+	// Build the shared HTML scrollback into its host panel. Clicked links open
+	// in the system browser; a right-clicked username shows the same Friend/Block
+	// menu as the players list; the page renders once it reports ready.
 	wxPanel* host = XRCCTRL(*this, "Id_ChatDisplayHost", wxPanel);
-	wxString backend = wxWebViewBackendDefault;
-	if (wxWebView::IsBackendAvailable(wxWebViewBackendEdge))
-	{
-		backend = wxWebViewBackendEdge;
-		m_isEdge = true;
-	}
-#ifdef __WXMSW__
-	else
-		// Falling back to the legacy IE control: by default it emulates IE7, where
-		// modern JS/CSS silently fail (so setMessages() would throw and nothing
-		// renders). Opt this exe into IE11 mode before the control is created.
-		// Harmless/ignored once the wx build provides the Edge backend.
-		wxWebViewIE::MSWSetEmulationLevel(wxWEBVIEWIE_EMU_IE11);
-#endif
-	m_web = wxWebView::New(host, wxID_ANY, wxWebViewDefaultURLStr, wxDefaultPosition,
-	                       wxDefaultSize, backend);
-	m_web->EnableContextMenu(false);
-
-	// Let the page hand us a username's subject on right-click so we can show the
-	// same Friend/Block menu as the players list. Must be registered before the
-	// page loads. Only the Edge backend supports script message handlers; where
-	// it isn't available the page's window.oda check makes it a no-op.
-	if (m_web->AddScriptMessageHandler("oda"))
-		m_web->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &ChatTab::OnWebScriptMessage, this);
-
-	wxBoxSizer* hostSizer = new wxBoxSizer(wxVERTICAL);
-	hostSizer->Add(m_web, 1, wxEXPAND);
-	host->SetSizer(hostSizer);
-	host->Layout();
-
-	// Theme the page from the system colours, then load it.
-	const wxColour bg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
-	const wxColour fg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
-	wxString html(kChatHtml, wxConvUTF8);
-	html.Replace("@BG@", bg.GetAsString(wxC2S_HTML_SYNTAX));
-	html.Replace("@FG@", fg.GetAsString(wxC2S_HTML_SYNTAX));
-	m_web->Bind(wxEVT_WEBVIEW_LOADED, &ChatTab::OnWebLoaded, this);
-	m_web->SetPage(html, wxString());
+	m_chat.OnOpenUrl = [](const wxString& url) { wxLaunchDefaultBrowser(url); };
+	m_chat.OnUserMenu = [this](const std::string& sub) { ShowUserContextMenu(sub); };
+	m_chat.OnReady = [this]() {
+		if (m_controller)
+			RenderMessages(m_controller->State());
+	};
+	m_chat.Create(host);
 
 	// Online-players list: not sortable (so a clicked row maps directly to a
 	// subject), two columns, right-click for friend/block actions.
@@ -154,13 +76,6 @@ void ChatTab::PostInit()
 	m_send->Enable(false);
 }
 
-void ChatTab::OnWebLoaded(wxWebViewEvent& WXUNUSED(event))
-{
-	m_webReady = true;
-	if (m_controller)
-		RenderMessages(m_controller->State());
-}
-
 void ChatTab::SetController(SocialController* controller)
 {
 	m_controller = controller;
@@ -169,7 +84,7 @@ void ChatTab::SetController(SocialController* controller)
 		m_input->Enable(false);
 		m_send->Enable(false);
 		m_status->SetLabel("Sign in to use global chat.");
-		RunJs("setMessages([]);");
+		m_chat.SetMessages("[]");
 		m_players->DeleteAllItems();
 		m_playerSubjects.clear();
 		m_playersSig.clear();
@@ -255,8 +170,8 @@ void ChatTab::Refresh()
 
 void ChatTab::RenderMessages(const SocialState& state)
 {
-	if (!m_webReady)
-		return; // OnWebLoaded() will render once the page is ready
+	if (!m_chat.IsReady())
+		return; // the web view's OnReady will render once the page is ready
 
 	// Read the chat display options fresh so a change in the settings dialog takes
 	// effect on the next render. Profanity filtering defaults on, timestamps off,
@@ -288,11 +203,11 @@ void ChatTab::RenderMessages(const SocialState& state)
 		const bool blocked = state.IsBlocked(line.authorSubject);
 		const std::string text = filterProfanity ? CensorProfanity(line.text) : line.text;
 
-		json += "{\"id\":" + JsonStr(line.messageId);
-		json += ",\"user\":" + JsonStr(user);
-		json += ",\"sub\":" + JsonStr(line.authorSubject);
-		json += ",\"text\":" + JsonStr(text);
-		json += ",\"ts\":" + JsonStr(ts);
+		json += "{\"id\":" + ChatWebView::JsonStr(line.messageId);
+		json += ",\"user\":" + ChatWebView::JsonStr(user);
+		json += ",\"sub\":" + ChatWebView::JsonStr(line.authorSubject);
+		json += ",\"text\":" + ChatWebView::JsonStr(text);
+		json += ",\"ts\":" + ChatWebView::JsonStr(ts);
 		json += ",\"blocked\":";
 		json += blocked ? "true" : "false";
 		json += ",\"deleted\":";
@@ -301,19 +216,7 @@ void ChatTab::RenderMessages(const SocialState& state)
 	}
 	json += "]";
 
-	RunJs("setMessages(" + wxString::FromUTF8(json) + ");");
-}
-
-void ChatTab::RunJs(const wxString& script)
-{
-	if (!m_web || !m_webReady)
-		return;
-	// Edge (Chromium) supports the async, non-blocking variant; the legacy IE
-	// backend only implements the synchronous RunScript. We never use the result.
-	if (m_isEdge)
-		m_web->RunScriptAsync(script);
-	else
-		m_web->RunScript(script);
+	m_chat.SetMessages(wxString::FromUTF8(json));
 }
 
 void ChatTab::RebuildPlayers(const SocialState& state)
@@ -364,25 +267,6 @@ void ChatTab::OnPlayerRightClick(wxListEvent& event)
 	if (row < 0 || row >= static_cast<long>(m_playerSubjects.size()))
 		return;
 	ShowUserContextMenu(m_playerSubjects[row]);
-}
-
-void ChatTab::OnWebScriptMessage(wxWebViewEvent& event)
-{
-	// Tab-delimited command from the page (see chat_view.inc):
-	//   "open\t<url>" -> open a clicked chat link in the system browser
-	//   "menu\t<sub>" -> show the Friend/Block menu for a right-clicked username
-	const wxString msg = event.GetString();
-	if (msg.StartsWith("open\t"))
-	{
-		const wxString url = msg.Mid(5);
-		// The page only ever builds http(s) targets; re-check before launching.
-		if (url.StartsWith("http://") || url.StartsWith("https://"))
-			wxLaunchDefaultBrowser(url);
-	}
-	else if (msg.StartsWith("menu\t"))
-	{
-		ShowUserContextMenu(msg.Mid(5).utf8_string());
-	}
 }
 
 void ChatTab::ShowUserContextMenu(const std::string& sub)

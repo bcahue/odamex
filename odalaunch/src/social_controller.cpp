@@ -27,6 +27,7 @@
 
 #include "api_client.h"
 #include "json_util.h"
+#include "launcher_session.h"
 #include "party_client.h"
 
 namespace
@@ -155,6 +156,12 @@ SocialController::SocialController(const wxString& apiBaseUrl,
                                    const DpopKey& key, wxEvtHandler* ui)
     : m_ui(ui), m_alive(std::make_shared<std::atomic<bool>>(true))
 {
+	// Decode our own subject from the session token up front (before the provider
+	// is moved into the hub) so party leader-gating and "is this me?" checks work.
+	if (tokenProvider)
+		m_state.selfSubject =
+		    LauncherSession::SubjectFromToken(wxString::FromUTF8(tokenProvider())).utf8_string();
+
 	m_api.reset(new ApiClient(apiBaseUrl, tokenProvider, key));
 	m_hub.reset(new PartyClient(apiBaseUrl.utf8_string(), std::move(tokenProvider), key));
 	WireHubEvents();
@@ -325,6 +332,119 @@ void SocialController::WireHubEvents()
 			m_state.NotifyChanged();
 		});
 	});
+
+	WirePartyEvents();
+}
+
+void SocialController::WirePartyEvents()
+{
+	m_hub->SetOnInvited([this](const PartyInvite& e) {
+		Marshal([this, e] {
+			for (const auto& inv : m_state.partyInvites)
+				if (inv.inviteId == e.inviteId)
+					return; // already have it
+			SocialPartyInvite inv;
+			inv.inviteId = e.inviteId;
+			inv.partyId = e.partyId;
+			inv.inviterSubject = e.inviterSubject;
+			inv.inviterUsername = ResolveUsername(e.inviterSubject);
+			inv.expiresAt = e.expiresAt;
+			const std::string inviterName =
+			    inv.inviterUsername.empty() ? inv.inviterSubject : inv.inviterUsername;
+			m_state.partyInvites.push_back(std::move(inv));
+			m_state.NotifyChanged();
+			// Raise the desktop notification (tray balloon + flash/bell/sound) for
+			// a genuinely new invite — runs on the UI thread inside Marshal().
+			if (m_onPartyInvite)
+				m_onPartyInvite(inviterName);
+		});
+	});
+
+	m_hub->SetOnPartyUpdated([this](const PartySnapshot& s) {
+		Marshal([this, s] {
+			ApplyPartySnapshot(s.partyId, s.leaderSubject, s.memberSubjects);
+			m_state.NotifyChanged();
+		});
+	});
+
+	m_hub->SetOnMessage([this](const PartyChatMessage& m) {
+		Marshal([this, m] {
+			SocialPartyChatLine line;
+			line.fromSubject = m.fromSubject;
+			line.fromUsername = ResolveUsername(m.fromSubject);
+			line.text = m.text;
+			line.sentAt = m.sentAt;
+			m_state.party.chat.push_back(std::move(line));
+			if (m_state.party.chat.size() > kChatCap)
+			{
+				m_state.party.chat.erase(
+				    m_state.party.chat.begin(),
+				    m_state.party.chat.begin() + (m_state.party.chat.size() - kChatCap));
+			}
+			m_state.NotifyChanged();
+		});
+	});
+
+	// Disbanded (party dissolved) or Kicked (we were removed): we're solo again.
+	auto clearParty = [this](const std::string&) {
+		Marshal([this] {
+			m_state.party = SocialParty{};
+			m_state.NotifyChanged();
+		});
+	};
+	m_hub->SetOnDisbanded(clearParty);
+	m_hub->SetOnKicked(clearParty);
+
+	m_hub->SetOnInviteDeclined([this](const PartyInviteDeclined& e) {
+		Marshal([this, e] {
+			// Best-effort: drop a matching pending invite if we were tracking it.
+			m_state.partyInvites.erase(
+			    std::remove_if(m_state.partyInvites.begin(), m_state.partyInvites.end(),
+			                   [&e](const SocialPartyInvite& i) { return i.inviteId == e.inviteId; }),
+			    m_state.partyInvites.end());
+			m_state.NotifyChanged();
+		});
+	});
+}
+
+void SocialController::ApplyPartySnapshot(const std::string& partyId,
+                                         const std::string& leaderSubject,
+                                         const std::vector<std::string>& memberSubjects)
+{
+	SocialParty& party = m_state.party;
+	party.active = !memberSubjects.empty();
+	party.partyId = partyId;
+	party.leaderSubject = leaderSubject;
+	party.selfIsLeader = !m_state.selfSubject.empty() && leaderSubject == m_state.selfSubject;
+
+	party.members.clear();
+	party.members.reserve(memberSubjects.size());
+	for (const auto& sub : memberSubjects)
+	{
+		SocialPartyMember mem;
+		mem.subject = sub;
+		mem.username = ResolveUsername(sub);
+		mem.isLeader = (sub == leaderSubject);
+		mem.isSelf = (!m_state.selfSubject.empty() && sub == m_state.selfSubject);
+		party.members.push_back(std::move(mem));
+	}
+
+	// We're in this party now — drop any pending invite to it.
+	m_state.partyInvites.erase(
+	    std::remove_if(m_state.partyInvites.begin(), m_state.partyInvites.end(),
+	                   [&partyId](const SocialPartyInvite& i) { return i.partyId == partyId; }),
+	    m_state.partyInvites.end());
+}
+
+std::string SocialController::ResolveUsername(const std::string& subject) const
+{
+	for (const auto& f : m_state.friends)
+		if (f.subject == subject && !f.username.empty())
+			return f.username;
+	for (const auto& p : m_state.participants)
+		if (p.subject == subject && !p.username.empty())
+			return p.username;
+	return subject; // best-effort fallback
 }
 
 // ---- actions (UI thread) ----
@@ -445,6 +565,83 @@ void SocialController::Unblock(const std::string& subject)
 		m_api->Unblock(subject);
 		DoRefreshAll();
 	});
+}
+
+// ---- party actions (hub) ----
+
+void SocialController::InviteToParty(
+    const std::string& subject,
+    std::function<void(bool ok, const std::string& message)> done)
+{
+	if (!m_hub)
+		return;
+	m_hub->Invite(subject, [this, done = std::move(done)](bool ok, const std::string& idOrErr) {
+		if (!done)
+			return;
+		std::string message = ok ? "Invite sent." : ("Couldn't send invite: " + idOrErr);
+		Marshal([done, ok, message] { done(ok, message); });
+	});
+}
+
+void SocialController::AcceptPartyInvite(const std::string& inviteId)
+{
+	if (!m_hub)
+		return;
+	// Drop the pending invite immediately for responsiveness; PartyUpdated
+	// follows with the roster.
+	Marshal([this, inviteId] {
+		m_state.partyInvites.erase(
+		    std::remove_if(m_state.partyInvites.begin(), m_state.partyInvites.end(),
+		                   [&inviteId](const SocialPartyInvite& i) { return i.inviteId == inviteId; }),
+		    m_state.partyInvites.end());
+		m_state.NotifyChanged();
+	});
+	m_hub->AcceptInvite(inviteId, [](bool, const std::string&) {});
+}
+
+void SocialController::DeclinePartyInvite(const std::string& inviteId)
+{
+	if (!m_hub)
+		return;
+	Marshal([this, inviteId] {
+		m_state.partyInvites.erase(
+		    std::remove_if(m_state.partyInvites.begin(), m_state.partyInvites.end(),
+		                   [&inviteId](const SocialPartyInvite& i) { return i.inviteId == inviteId; }),
+		    m_state.partyInvites.end());
+		m_state.NotifyChanged();
+	});
+	m_hub->DeclineInvite(inviteId, [](bool, const std::string&) {});
+}
+
+void SocialController::LeaveParty()
+{
+	if (!m_hub)
+		return;
+	m_hub->Leave([](bool, const std::string&) {});
+	// Optimistic local clear; Disbanded/PartyUpdated will confirm.
+	Marshal([this] {
+		m_state.party = SocialParty{};
+		m_state.NotifyChanged();
+	});
+}
+
+void SocialController::KickFromParty(const std::string& subject)
+{
+	if (m_hub)
+		m_hub->Kick(subject, [](bool, const std::string&) {});
+}
+
+void SocialController::PromoteToLeader(const std::string& subject)
+{
+	if (m_hub)
+		m_hub->PromoteLeader(subject, [](bool, const std::string&) {});
+}
+
+void SocialController::SendPartyMessage(const std::string& text)
+{
+	// The hub echoes the message back via OnMessage, so don't append locally.
+	if (m_hub)
+		m_hub->SendMessage(text, [](bool, const std::string&) {});
 }
 
 // ---- worker plumbing ----

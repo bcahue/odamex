@@ -75,7 +75,10 @@ wxDECLARE_EVENT(wxEVT_THREAD_WORKER_SIGNAL, wxCommandEvent);
 
 class ChatTab;
 class FriendsTab;
+class PartyTab;
 class PlayersTab;
+class wxTaskBarIcon;
+class wxIconizeEvent;
 
 class dlgMain : public wxFrame, wxThreadHelper
 {
@@ -83,6 +86,15 @@ public:
 
 	dlgMain(wxWindow* parent,wxWindowID id = -1);
 	virtual ~dlgMain();
+
+	// Un-hide and re-raise the launcher from the system-tray icon (used by the
+	// tray icon's double-click, its "Restore" menu item, and a balloon click).
+	void RestoreFromTray();
+
+	// Remove a tray icon that was installed only to host a notification balloon
+	// (when not minimized to tray). No-op for the persistent minimize-to-tray
+	// icon. Called when the balloon times out.
+	void DismissTransientTrayIcon();
 
 	odalpapi::Server         NullServer;
 	std::unique_ptr<odalpapi::Server[]> QServer;
@@ -133,6 +145,18 @@ protected:
 	void OnClose(wxCloseEvent& event);
 	void OnWindowCreate(wxWindowCreateEvent& event);
 
+	// "Minimize to the system tray" (Application Tray setting): when minimizing
+	// with the setting on, hide the frame (off the taskbar) and show a tray icon.
+	void OnIconize(wxIconizeEvent& event);
+	// Create the tray icon on first use and (re)show it with the app icon/tooltip.
+	void ShowTrayIcon();
+	// Read the "Minimize to the system tray" setting fresh from config.
+	bool MinimizeToTrayEnabled() const;
+
+	// Desktop notification for an incoming party invite: a tray balloon plus the
+	// configured taskbar flash / system bell / sound (shared with players-online).
+	void NotifyPartyInvite(const wxString& inviterName);
+
 	void OnTimer(wxTimerEvent& event);
 	void OnProcessTerminate(wxProcessEvent& event);
 
@@ -182,6 +206,10 @@ protected:
 	// social features build their UI onto the other panels.
 	wxNotebook* m_MainNotebook;
 
+	// Party tab — an XRC-subclassed PartyTab: current party (members + leader
+	// gating), pending invites, and party chat, acting through the SocialController.
+	PartyTab* m_PartyTab;
+
 	// Friends tab — an XRC-subclassed FriendsTab (slice L5): friends list +
 	// pending requests, acting through the SocialController.
 	FriendsTab* m_FriendsTab;
@@ -196,6 +224,14 @@ protected:
 
 	wxStatusBar* m_StatusBar;
 	wxProcess* m_Process;
+
+	// System-tray icon, created lazily the first time the launcher minimizes to
+	// tray (or to host a notification balloon); null until then. Removed + deleted
+	// on close.
+	wxTaskBarIcon* m_TaskBarIcon = nullptr;
+	// True when the tray icon was installed solely to show a balloon (i.e. not
+	// minimized to tray), so it can be pulled again once the balloon is gone.
+	bool m_TrayIconTransient = false;
 
 	bool m_UpdateCheckWasAutomatic = false;
 	bool m_ClientIsRunning;

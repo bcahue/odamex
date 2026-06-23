@@ -74,6 +74,7 @@ BEGIN_EVENT_TABLE(dlgConfig,wxDialog)
 	EVT_CHECKBOX(XRCID("Id_ChkColorServerLine"), dlgConfig::OnCheckedBox)
 	EVT_CHECKBOX(XRCID("Id_ChkColorCustomServers"), dlgConfig::OnCheckedBox)
 	EVT_CHECKBOX(XRCID("Id_ChkAutoRefresh"), dlgConfig::OnCheckedBox)
+	EVT_CHECKBOX(XRCID("Id_ChkMinimizeToTray"), dlgConfig::OnCheckedBox)
 
 	EVT_NOTEBOOK_PAGE_CHANGED(XRCID("Id_Notebook"), dlgConfig::OnNotebookPageChanged)
 
@@ -118,6 +119,7 @@ dlgConfig::dlgConfig(wxWindow* parent, wxWindowID id) :
 	m_ChkCtrlHighlightServerLines = XRCCTRL(*this, "Id_ChkColorServerLine", wxCheckBox);
 	m_ChkCtrlHighlightCustomServers = XRCCTRL(*this, "Id_ChkColorCustomServers", wxCheckBox);
 	m_ChkCtrlkAutoServerRefresh = XRCCTRL(*this, "Id_ChkAutoRefresh", wxCheckBox);
+	m_ChkCtrlMinimizeToTray = XRCCTRL(*this, "Id_ChkMinimizeToTray", wxCheckBox);
 
 	m_LstCtrlWadDirectories = XRCCTRL(*this, "Id_LstCtrlWadDirectories", wxListBox);
 
@@ -464,7 +466,7 @@ void dlgConfig::LoadSettings()
 	bool GetListOnStart, ShowBlockedServers, LoadChatOnLS, CheckForUpdates;
 	bool FilterProfanity, ShowChatTimestamps, Chat24HourTime, ChatShowSeconds;
 	bool FlashTaskBar, PlaySystemBell, PlaySoundFile, HighlightServers;
-	bool CustomServersHighlight;
+	bool CustomServersHighlight, MinimizeToTray;
 
 	bool AutoServerRefresh;
 	int ThreadMul, ThreadMax, MasterTimeout, ServerTimeout, RetryCount;
@@ -506,6 +508,7 @@ void dlgConfig::LoadSettings()
     ConfigInfo.Read(QRYTHREADMAXIMUM, &ThreadMax, ODA_THRMAXVAL);
 	ConfigInfo.Read(CSHLSERVERS, &CustomServersHighlight, ODA_UICSHIGHTLIGHTSERVERS);
 	ConfigInfo.Read(CSHLCOLOUR, &CustomServerColour, ODA_UICSHSHIGHLIGHTCOLOUR);
+	ConfigInfo.Read(MINIMIZETOTRAY, &MinimizeToTray, ODA_UIMINIMIZETOTRAY);
 
 	m_ChkCtrlEnableBroadcasts->SetValue(UseBroadcast);
 	m_ChkCtrlGetListOnStart->SetValue(GetListOnStart);
@@ -520,6 +523,7 @@ void dlgConfig::LoadSettings()
 	m_ChkCtrlFlashTaskBar->SetValue(FlashTaskBar);
 	m_ChkCtrlPlaySystemBeep->SetValue(PlaySystemBell);
 	m_ChkCtrlPlaySoundFile->SetValue(PlaySoundFile);
+	m_ChkCtrlMinimizeToTray->SetValue(MinimizeToTray);
 	m_ChkCtrlHighlightServerLines->SetValue(HighlightServers);
 	m_ChkCtrlHighlightCustomServers->SetValue(CustomServersHighlight);
 	m_ChkCtrlkAutoServerRefresh->SetValue(AutoServerRefresh);
@@ -597,6 +601,7 @@ void dlgConfig::SaveSettings()
 	ConfigInfo.Write(POLPLAYSYSTEMBELL, m_ChkCtrlPlaySystemBeep->GetValue());
 	ConfigInfo.Write(POLPLAYSOUND, m_ChkCtrlPlaySoundFile->GetValue());
 	ConfigInfo.Write(POLPSWAVFILE, m_FilePickCtrlSoundFile->GetPath());
+	ConfigInfo.Write(MINIMIZETOTRAY, m_ChkCtrlMinimizeToTray->GetValue());
 	ConfigInfo.Write(POLHLSERVERS, m_ChkCtrlHighlightServerLines->GetValue());
 	ConfigInfo.Write(POLHLSCOLOUR, m_ClrPickServerLineHighlighter->GetColour().GetAsString(wxC2S_HTML_SYNTAX));
 	ConfigInfo.Write(ARTENABLE, m_ChkCtrlkAutoServerRefresh->GetValue());

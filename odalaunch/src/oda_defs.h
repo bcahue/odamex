@@ -72,6 +72,11 @@
 // Highlight colour
 #define ODA_UICSHSHIGHLIGHTCOLOUR "#0094FF"
 
+/* Application tray */
+// Hide the launcher to the system tray (notification area) when minimized,
+// instead of leaving it on the taskbar
+#define ODA_UIMINIMIZETOTRAY 0
+
 /* Auto server list refresh timer */
 // Enables/disables the timer
 #define ODA_UIARTENABLE 1
@@ -164,6 +169,7 @@ inline constexpr const char* def_masterlist[] =
 #define POLHLSCOLOUR        "POLHighlightColour"
 #define CSHLSERVERS         "CSHighlightServers"
 #define CSHLCOLOUR          "CSHighlightColour"
+#define MINIMIZETOTRAY      "MinimizeToTray"
 #define ARTENABLE           "UseAutoRefreshTimer"
 #define ARTREFINTERVAL      "AutoRefreshTimerRefreshInterval"
 #define ARTNEWLISTINTERVAL  "AutoRefreshTimerNewListInterval"

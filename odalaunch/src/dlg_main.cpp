@@ -62,6 +62,8 @@
 #include <wx/sound.h>
 #include <wx/msgout.h>
 #include <wx/stdpaths.h>
+#include <wx/taskbar.h>
+#include <wx/fileconf.h>
 
 #include <wx/protocol/http.h>
 #include <wx/stream.h>
@@ -86,6 +88,7 @@
 #include "ticket_refresher.h"
 #include "chat_tab.h"
 #include "friends_tab.h"
+#include "party_tab.h"
 #include "players_tab.h"
 
 using namespace odalpapi;
@@ -112,6 +115,53 @@ int AuthServerIdFromServer(const Server& srv)
 	}
 	return authEnabled ? serverId : 0;
 }
+
+// System-tray icon backing the "Minimize to the system tray" setting. Holds the
+// frame so a double-click or its popup menu can restore (or exit) the launcher.
+enum
+{
+	Id_TrayRestore = wxID_HIGHEST + 4200,
+	Id_TrayExit
+};
+
+class OdaTaskBarIcon : public wxTaskBarIcon
+{
+  public:
+	explicit OdaTaskBarIcon(dlgMain* frame) : m_frame(frame)
+	{
+		Bind(wxEVT_TASKBAR_LEFT_DCLICK, &OdaTaskBarIcon::OnRestore, this);
+		Bind(wxEVT_MENU, &OdaTaskBarIcon::OnMenu, this);
+#ifdef __WXMSW__
+		// Clicking a notification balloon raises the launcher; once it times out,
+		// drop the icon if it was only installed to host the balloon.
+		Bind(wxEVT_TASKBAR_BALLOON_CLICK, &OdaTaskBarIcon::OnRestore, this);
+		Bind(wxEVT_TASKBAR_BALLOON_TIMEOUT, &OdaTaskBarIcon::OnBalloonTimeout, this);
+#endif
+	}
+
+	// Right-click menu for the tray icon.
+	wxMenu* CreatePopupMenu() override
+	{
+		wxMenu* menu = new wxMenu;
+		menu->Append(Id_TrayRestore, "&Restore");
+		menu->AppendSeparator();
+		menu->Append(Id_TrayExit, "E&xit");
+		return menu;
+	}
+
+  private:
+	void OnRestore(wxTaskBarIconEvent&) { m_frame->RestoreFromTray(); }
+	void OnBalloonTimeout(wxTaskBarIconEvent&) { m_frame->DismissTransientTrayIcon(); }
+	void OnMenu(wxCommandEvent& event)
+	{
+		if (event.GetId() == Id_TrayExit)
+			m_frame->Close(true);
+		else
+			m_frame->RestoreFromTray();
+	}
+
+	dlgMain* m_frame;
+};
 } // namespace
 
 // Control ID assignments for events
@@ -140,6 +190,7 @@ BEGIN_EVENT_TABLE(dlgMain, wxFrame)
 
 	EVT_SHOW(dlgMain::OnShow)
 	EVT_CLOSE(dlgMain::OnClose)
+	EVT_ICONIZE(dlgMain::OnIconize)
 
 	EVT_WINDOW_CREATE(dlgMain::OnWindowCreate)
 
@@ -239,6 +290,10 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 	// and Chat panels are XRC-subclassed views that stay idle until a session
 	// signs in and SetController() hands them the live controller.
 	m_MainNotebook = XRCCTRL(*this, "Id_MainNotebook", wxNotebook);
+
+	m_PartyTab = XRCCTRL(*this, "Id_PnlPartyTab", PartyTab);
+	if(m_PartyTab)
+		m_PartyTab->PostInit();
 
 	m_FriendsTab = XRCCTRL(*this, "Id_PnlFriendsTab", FriendsTab);
 	if(m_FriendsTab)
@@ -500,6 +555,15 @@ void dlgMain::OnClose(wxCloseEvent& event)
 	if(server_dlg != nullptr)
 		server_dlg->Destroy();
 
+	// Pull the tray icon before teardown so it doesn't linger in the notification
+	// area after the process exits.
+	if(m_TaskBarIcon != nullptr)
+	{
+		m_TaskBarIcon->RemoveIcon();
+		delete m_TaskBarIcon;
+		m_TaskBarIcon = nullptr;
+	}
+
 	Destroy();
 }
 
@@ -513,6 +577,106 @@ void dlgMain::OnShow(wxShowEvent& event)
 void dlgMain::OnExit(wxCommandEvent& event)
 {
 	Close();
+}
+
+// Read the "Minimize to the system tray" setting fresh, so toggling it in the
+// config dialog takes effect on the next minimize without a restart.
+bool dlgMain::MinimizeToTrayEnabled() const
+{
+	wxFileConfig ConfigInfo;
+	bool enabled = ODA_UIMINIMIZETOTRAY;
+	ConfigInfo.Read(MINIMIZETOTRAY, &enabled, ODA_UIMINIMIZETOTRAY);
+	return enabled;
+}
+
+void dlgMain::ShowTrayIcon()
+{
+	if(m_TaskBarIcon == nullptr)
+		m_TaskBarIcon = new OdaTaskBarIcon(this);
+
+	// Use the launcher's own icon ("mainicon", the same one set on the frame) for
+	// the tray; fall back to the frame icon if for some reason it can't load.
+	wxIcon trayIcon = wxXmlResource::Get()->LoadIcon("mainicon");
+	if(!trayIcon.IsOk())
+		trayIcon = GetIcon();
+	m_TaskBarIcon->SetIcon(trayIcon, GetLabel());
+}
+
+void dlgMain::RestoreFromTray()
+{
+	Show(true);
+	if(IsIconized())
+		Iconize(false);
+	Raise();
+	m_TrayIconTransient = false;
+	if(m_TaskBarIcon != nullptr)
+		m_TaskBarIcon->RemoveIcon();
+}
+
+void dlgMain::DismissTransientTrayIcon()
+{
+	// Only pull the icon if it was installed purely to host a balloon; the
+	// persistent minimize-to-tray icon stays put.
+	if(m_TrayIconTransient && m_TaskBarIcon != nullptr)
+	{
+		m_TaskBarIcon->RemoveIcon();
+		m_TrayIconTransient = false;
+	}
+}
+
+void dlgMain::NotifyPartyInvite(const wxString& inviterName)
+{
+	// Same notification preferences as the players-online notifier.
+	bool FlashTaskbar = ODA_UIPOLFLASHTASKBAR;
+	bool PlaySystemBell = ODA_UIPOLPLAYSYSTEMBELL;
+	bool PlaySoundFile = ODA_UIPOLPLAYSOUND;
+	wxString SoundFile;
+	{
+		wxFileConfig ConfigInfo;
+		ConfigInfo.Read(POLFLASHTBAR, &FlashTaskbar, ODA_UIPOLFLASHTASKBAR);
+		ConfigInfo.Read(POLPLAYSYSTEMBELL, &PlaySystemBell, ODA_UIPOLPLAYSYSTEMBELL);
+		ConfigInfo.Read(POLPLAYSOUND, &PlaySoundFile, ODA_UIPOLPLAYSOUND);
+		if(PlaySoundFile)
+			ConfigInfo.Read(POLPSWAVFILE, &SoundFile, "");
+	}
+
+	const wxString title = "Odamex - Party invite";
+	const wxString text = inviterName.IsEmpty()
+	    ? wxString("You've been invited to a party.")
+	    : wxString::Format("%s invited you to their party.", inviterName);
+
+#ifdef __WXMSW__
+	// A tray balloon needs an installed tray icon. If the launcher isn't currently
+	// minimized to tray, install one transiently just for this balloon and remove
+	// it on timeout (DismissTransientTrayIcon).
+	if(m_TaskBarIcon == nullptr || !m_TaskBarIcon->IsIconInstalled())
+	{
+		ShowTrayIcon();
+		m_TrayIconTransient = true;
+	}
+	if(m_TaskBarIcon != nullptr)
+		m_TaskBarIcon->ShowBalloon(title, text, 0, wxICON_INFORMATION);
+#endif
+
+	// Flash the taskbar button, ring the system bell, and/or play the sound file,
+	// honoring the user's notification settings.
+	if(FlashTaskbar)
+		RequestUserAttention();
+	if(PlaySystemBell)
+		wxBell();
+	if(!SoundFile.empty())
+		wxSound::Play(SoundFile, wxSOUND_ASYNC);
+}
+
+void dlgMain::OnIconize(wxIconizeEvent& event)
+{
+	// Only act when minimizing (not restoring) and only if the user opted in.
+	if(event.IsIconized() && MinimizeToTrayEnabled())
+	{
+		ShowTrayIcon();
+		Hide(); // pull the window off the taskbar; the tray icon remains
+	}
+	event.Skip();
 }
 
 void dlgMain::OnCheckVersion(wxCommandEvent &event)
@@ -1865,6 +2029,8 @@ void dlgMain::UpdateAccountStatus()
 		    sess->Key(), this));
 		// Re-render the social tabs whenever state changes (fires on the UI thread).
 		m_Social->State().SetOnChanged([this] {
+			if(m_PartyTab)
+				m_PartyTab->Refresh();
 			if(m_ChatPanel)
 				m_ChatPanel->Refresh();
 			if(m_FriendsTab)
@@ -1872,6 +2038,13 @@ void dlgMain::UpdateAccountStatus()
 			if(m_PlayersTab)
 				m_PlayersTab->Refresh();
 		});
+		// Desktop notification (tray balloon + configured flash/bell/sound) when a
+		// new party invite arrives. Fires on the UI thread.
+		m_Social->SetOnPartyInvite([this](const std::string& inviterName) {
+			NotifyPartyInvite(wxString::FromUTF8(inviterName));
+		});
+		if(m_PartyTab)
+			m_PartyTab->SetController(m_Social.get());
 		if(m_ChatPanel)
 			m_ChatPanel->SetController(m_Social.get());
 		if(m_FriendsTab)
@@ -1882,6 +2055,8 @@ void dlgMain::UpdateAccountStatus()
 	}
 	else if(!signedIn && m_Social)
 	{
+		if(m_PartyTab)
+			m_PartyTab->SetController(nullptr);
 		if(m_ChatPanel)
 			m_ChatPanel->SetController(nullptr);
 		if(m_FriendsTab)

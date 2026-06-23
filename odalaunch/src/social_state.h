@@ -72,6 +72,44 @@ struct SocialBlocked
 	std::string blockedSince; // ISO-8601 UTC
 };
 
+struct SocialPartyMember
+{
+	std::string subject;
+	std::string username;  // best-effort; falls back to the subject when unknown
+	bool isLeader = false;
+	bool isSelf = false;
+};
+
+struct SocialPartyInvite
+{
+	std::string inviteId;
+	std::string partyId;
+	std::string inviterSubject;
+	std::string inviterUsername; // best-effort
+	std::string expiresAt;       // ISO-8601
+};
+
+struct SocialPartyChatLine
+{
+	std::string fromSubject;
+	std::string fromUsername; // best-effort
+	std::string text;
+	std::string sentAt;
+};
+
+// The player's current party. `active` is false when not in a party (solo).
+struct SocialParty
+{
+	bool active = false;
+	std::string partyId;
+	std::string leaderSubject;
+	std::vector<SocialPartyMember> members;
+
+	bool selfIsLeader = false;
+
+	std::vector<SocialPartyChatLine> chat; // newest last; capped by the controller
+};
+
 class SocialState
 {
   public:
@@ -84,6 +122,13 @@ class SocialState
 		Disconnected
 	};
 	HubState hubState = HubState::Connecting;
+
+	// The signed-in player's own subject (decoded from the session token), so
+	// views can tell "me" apart from other members and gate leader-only actions.
+	std::string selfSubject;
+
+	SocialParty party;
+	std::vector<SocialPartyInvite> partyInvites; // pending incoming invites
 
 	std::vector<SocialFriend> friends;
 	std::vector<SocialRequest> incoming;
