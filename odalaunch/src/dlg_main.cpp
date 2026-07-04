@@ -46,6 +46,9 @@
 #include <wx/settings.h>
 #include <wx/menu.h>
 #include <wx/statusbr.h>
+#include <wx/toolbar.h>
+#include <wx/bmpbuttn.h>
+#include <wx/image.h>
 #include <wx/msgdlg.h>
 #include <wx/richmsgdlg.h>
 #include <wx/utils.h>
@@ -89,6 +92,7 @@
 #include "chat_tab.h"
 #include "friends_tab.h"
 #include "party_tab.h"
+#include "party_chat_panel.h"
 #include "players_tab.h"
 
 using namespace odalpapi;
@@ -219,6 +223,8 @@ BEGIN_EVENT_TABLE(dlgMain, wxFrame)
 	EVT_MENU(XRCID("Id_MnuItmSubmitBugReport"), dlgMain::OnOpenReportBug)
 	EVT_MENU(wxID_ABOUT, dlgMain::OnAbout)
 	EVT_MENU(XRCID("Id_MnuItmOpenChat"), dlgMain::OnOpenChat)
+	EVT_BUTTON(XRCID("Id_BtnPartyToggle"), dlgMain::OnToggleSocial)
+	EVT_BUTTON(XRCID("Id_PartyLeaveBtn"), dlgMain::OnLeaveParty)
 
 	// account / authentication
 	EVT_MENU(XRCID("Id_MnuItmAccountLogin"), dlgMain::OnAccountLogin)
@@ -306,6 +312,36 @@ dlgMain::dlgMain(wxWindow* parent, wxWindowID id)
 	m_PlayersTab = XRCCTRL(*this, "Id_PnlPlayersTab", PlayersTab);
 	if(m_PlayersTab)
 		m_PlayersTab->PostInit();
+
+	// The collapsible social UI: the right-side Party/Friends panel and the bottom
+	// party-chat strip. Both stay hidden until the "Party" toolbar button shows
+	// them (and only while signed in).
+	m_SocialRightPanel = XRCCTRL(*this, "Id_PnlSocialRight", wxPanel);
+	m_PartyChatPanel = XRCCTRL(*this, "Id_PnlPartyChat", PartyChatPanel);
+	if(m_PartyChatPanel)
+		m_PartyChatPanel->PostInit();
+
+	// Leave Party lives in the right panel's bottom bar (aligns with the corner
+	// toggle); hidden until the user is actually in a party.
+	m_PartyLeaveBtn = XRCCTRL(*this, "Id_PartyLeaveBtn", wxButton);
+	if(m_PartyLeaveBtn)
+		m_PartyLeaveBtn->Hide();
+
+	// Shrink the corner show/hide button's icon to half size (wxBU_EXACTFIT then
+	// sizes the button to the smaller bitmap).
+	if(wxBitmapButton* toggle = XRCCTRL(*this, "Id_BtnPartyToggle", wxBitmapButton))
+	{
+		const wxBitmap bmp = toggle->GetBitmapLabel();
+		if(bmp.IsOk())
+		{
+			wxImage img = bmp.ConvertToImage();
+			img.Rescale(bmp.GetWidth() / 2, bmp.GetHeight() / 2, wxIMAGE_QUALITY_HIGH);
+			toggle->SetBitmapLabel(wxBitmap(img));
+		}
+	}
+
+	// Start hidden + the toggle disabled until a session signs in.
+	UpdateSocialPanels(false);
 
 	#if defined(__linux__) && wxCHECK_VERSION(3, 3, 0)
 	const auto res = wxFileConfig::MigrateLocalFile("odalaunch", wxCONFIG_USE_XDG, wxCONFIG_USE_LOCAL_FILE);
@@ -2037,6 +2073,9 @@ void dlgMain::UpdateAccountStatus()
 				m_FriendsTab->Refresh();
 			if(m_PlayersTab)
 				m_PlayersTab->Refresh();
+			if(m_PartyChatPanel)
+				m_PartyChatPanel->Refresh();
+			UpdatePartyLeaveButton();
 		});
 		// Desktop notification (tray balloon + configured flash/bell/sound) when a
 		// new party invite arrives. Fires on the UI thread.
@@ -2051,7 +2090,11 @@ void dlgMain::UpdateAccountStatus()
 			m_FriendsTab->SetController(m_Social.get());
 		if(m_PlayersTab)
 			m_PlayersTab->SetController(m_Social.get());
+		if(m_PartyChatPanel)
+			m_PartyChatPanel->SetController(m_Social.get());
 		m_Social->Start();
+		UpdateSocialPanels(true);
+		UpdatePartyLeaveButton();
 	}
 	else if(!signedIn && m_Social)
 	{
@@ -2063,9 +2106,59 @@ void dlgMain::UpdateAccountStatus()
 			m_FriendsTab->SetController(nullptr);
 		if(m_PlayersTab)
 			m_PlayersTab->SetController(nullptr);
+		if(m_PartyChatPanel)
+			m_PartyChatPanel->SetController(nullptr);
 		m_Social->Stop();
 		m_Social.reset();
+		// Signed out: collapse and lock the social UI.
+		m_SocialVisible = false;
+		UpdateSocialPanels(false);
+		UpdatePartyLeaveButton();
 	}
+}
+
+// Toolbar "Party" toggle: flip the visibility of the right Party/Friends panel
+// and the bottom chat strip together.
+void dlgMain::OnToggleSocial(wxCommandEvent& WXUNUSED(event))
+{
+	m_SocialVisible = !m_SocialVisible;
+	UpdateSocialPanels(m_Social != nullptr);
+}
+
+void dlgMain::UpdateSocialPanels(bool signedIn)
+{
+	// The social panels are only available while signed in; force them hidden and
+	// disable the toggle otherwise.
+	const bool show = signedIn && m_SocialVisible;
+
+	// The corner toggle is only usable while signed in.
+	if(wxWindow* btn = FindWindowById(XRCID("Id_BtnPartyToggle"), this))
+		btn->Enable(signedIn);
+
+	bool changed = false;
+	if(m_SocialRightPanel)
+		changed |= m_SocialRightPanel->Show(show);
+	if(m_PartyChatPanel)
+		changed |= m_PartyChatPanel->Show(show);
+	if(changed)
+		Layout();
+}
+
+void dlgMain::OnLeaveParty(wxCommandEvent& WXUNUSED(event))
+{
+	if(m_Social)
+		m_Social->LeaveParty();
+}
+
+void dlgMain::UpdatePartyLeaveButton()
+{
+	if(!m_PartyLeaveBtn)
+		return;
+	// Visible only while actually in a party; relayout the right panel so the
+	// notebook reclaims/yields the bottom bar.
+	const bool inParty = m_Social && m_Social->State().party.active;
+	if(m_PartyLeaveBtn->Show(inParty) && m_SocialRightPanel)
+		m_SocialRightPanel->Layout();
 }
 
 void dlgMain::OnAccountLogin(wxCommandEvent& WXUNUSED(event))

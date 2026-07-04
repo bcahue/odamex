@@ -20,23 +20,13 @@
 
 #include "party_tab.h"
 
-#include <wx/button.h>
-#include <wx/fileconf.h>
 #include <wx/listctrl.h>
 #include <wx/menu.h>
-#include <wx/panel.h>
-#include <wx/splitter.h>
 #include <wx/stattext.h>
 #include <wx/string.h>
-#include <wx/textctrl.h>
-#include <wx/utils.h>
 #include <wx/xrc/xmlres.h>
 
-#include <string>
-
 #include "lst_custom.h"
-#include "oda_defs.h"
-#include "profanity_filter.h"
 #include "social_controller.h"
 
 wxIMPLEMENT_DYNAMIC_CLASS(PartyTab, wxPanel);
@@ -46,7 +36,6 @@ PartyTab::PartyTab() = default;
 void PartyTab::PostInit()
 {
 	m_status = XRCCTRL(*this, "Id_PartyStatus", wxStaticText);
-	m_lobbySelection = XRCCTRL(*this, "Id_PartyLobbySelection", wxStaticText);
 
 	m_members = XRCCTRL(*this, "Id_PartyMembers", wxAdvancedListCtrl);
 	m_members->HeaderUsable(false);
@@ -58,31 +47,6 @@ void PartyTab::PostInit()
 	m_invites->HeaderUsable(false);
 	m_invites->InsertColumn(0, "Invited by", wxLIST_FORMAT_LEFT, 290);
 	m_invites->Bind(wxEVT_LIST_ITEM_RIGHT_CLICK, &PartyTab::OnInviteRightClick, this);
-
-	wxPanel* chatHost = XRCCTRL(*this, "Id_PartyChatHost", wxPanel);
-	m_chat.OnOpenUrl = [](const wxString& url) { wxLaunchDefaultBrowser(url); };
-	m_chat.OnUserMenu = [this](const std::string& sub) { ShowUserContextMenu(sub); };
-	m_chat.OnReady = [this]() {
-		if (m_controller)
-			RenderChat(m_controller->State());
-	};
-	m_chat.Create(chatHost);
-
-	m_chatInput = XRCCTRL(*this, "Id_PartyChatInput", wxTextCtrl);
-	m_sendButton = XRCCTRL(*this, "Id_PartyChatSendBtn", wxButton);
-	m_leaveButton = XRCCTRL(*this, "Id_PartyLeaveBtn", wxButton);
-
-	m_splitMain = XRCCTRL(*this, "Id_PartySplitMain", wxSplitterWindow);
-	m_splitChat = XRCCTRL(*this, "Id_PartySplitChat", wxSplitterWindow);
-	Bind(wxEVT_SIZE, &PartyTab::OnSize, this);
-
-	m_sendButton->Bind(wxEVT_BUTTON, &PartyTab::OnSend, this);
-	m_chatInput->Bind(wxEVT_TEXT_ENTER, &PartyTab::OnEnter, this);
-	m_leaveButton->Bind(wxEVT_BUTTON, &PartyTab::OnLeave, this);
-
-	m_chatInput->Enable(false);
-	m_sendButton->Enable(false);
-	m_leaveButton->Enable(false);
 }
 
 void PartyTab::SetController(SocialController* controller)
@@ -96,16 +60,8 @@ void PartyTab::SetController(SocialController* controller)
 		m_invites->DeleteAllItems();
 		m_inviteIds.clear();
 		m_invitesSig.clear();
-		m_chat.SetMessages("[]");
-		m_chatSig.clear();
-		m_chatInput->Clear();
-		m_chatInput->Enable(false);
-		m_sendButton->Enable(false);
-		m_leaveButton->Enable(false);
 		if (m_status)
 			m_status->SetLabel(wxEmptyString);
-		if (m_lobbySelection)
-			m_lobbySelection->SetLabel(wxEmptyString);
 		return;
 	}
 	Refresh();
@@ -116,33 +72,12 @@ void PartyTab::Refresh()
 	if (!m_controller)
 		return;
 	const SocialState& state = m_controller->State();
-	UpdateStatusAndButtons(state);
-	UpdateLobbySelection(state);
+	UpdateStatus(state);
 	RebuildMembers(state);
 	RebuildInvites(state);
-	RenderChat(state);
 }
 
-void PartyTab::UpdateLobbySelection(const SocialState& state)
-{
-	if (!m_lobbySelection)
-		return;
-
-	// The party hub snapshot doesn't carry a lobby selection yet (the read-only
-	// LobbySelection mirror is still to come), so show placeholder guidance.
-	wxString text;
-	if (!state.party.active)
-		text = wxEmptyString;
-	else if (state.party.selfIsLeader)
-		text = "Pick a lobby from the Matchmaking or Quickplay tab to share it with your party.";
-	else
-		text = "The party leader hasn't selected a lobby yet.";
-
-	m_lobbySelection->SetLabel(text);
-	m_lobbySelection->Wrap(m_lobbySelection->GetClientSize().GetWidth());
-}
-
-void PartyTab::UpdateStatusAndButtons(const SocialState& state)
+void PartyTab::UpdateStatus(const SocialState& state)
 {
 	const SocialParty& party = state.party;
 
@@ -159,11 +94,6 @@ void PartyTab::UpdateStatusAndButtons(const SocialState& state)
 	}
 	if (m_status)
 		m_status->SetLabel(status);
-
-	// Chat + leave are available whenever you're actually in a party.
-	m_chatInput->Enable(party.active);
-	m_sendButton->Enable(party.active);
-	m_leaveButton->Enable(party.active);
 }
 
 void PartyTab::RebuildMembers(const SocialState& state)
@@ -224,94 +154,6 @@ void PartyTab::RebuildInvites(const SocialState& state)
 	}
 }
 
-void PartyTab::RenderChat(const SocialState& state)
-{
-	std::string sig;
-	for (const auto& line : state.party.chat)
-	{
-		sig += line.sentAt;
-		sig += '|';
-		sig += line.fromSubject;
-		sig += '|';
-		sig += line.text;
-		sig += '\n';
-	}
-	if (sig == m_chatSig)
-		return;
-	m_chatSig = sig;
-
-	// Match the global-chat tab's profanity preference (default on).
-	bool filterProfanity = true;
-	{
-		wxFileConfig cfg;
-		cfg.Read(FILTERPROFANITY, &filterProfanity, ODA_UIFILTERPROFANITY);
-	}
-
-	// Build the same setMessages() payload the global-chat tab uses. Party chat
-	// has no per-message id and is never "blocked", so the id is just a render
-	// key (the row index) and ts is left empty (no timestamps in party chat).
-	std::string json = "[";
-	bool first = true;
-	int idx = 0;
-	for (const auto& line : state.party.chat)
-	{
-		if (!first)
-			json += ",";
-		first = false;
-
-		const std::string user = line.fromUsername.empty() ? line.fromSubject : line.fromUsername;
-		const std::string text = filterProfanity ? CensorProfanity(line.text) : line.text;
-
-		json += "{\"id\":" + ChatWebView::JsonStr(std::to_string(idx++));
-		json += ",\"user\":" + ChatWebView::JsonStr(user);
-		json += ",\"sub\":" + ChatWebView::JsonStr(line.fromSubject);
-		json += ",\"text\":" + ChatWebView::JsonStr(text);
-		json += ",\"ts\":\"\"";
-		json += ",\"blocked\":false";
-		json += ",\"deleted\":false";
-		json += "}";
-	}
-	json += "]";
-
-	m_chat.SetMessages(wxString::FromUTF8(json));
-}
-
-void PartyTab::ShowUserContextMenu(const std::string& sub)
-{
-	if (!m_controller || sub.empty())
-		return;
-
-	const SocialState& state = m_controller->State();
-	// No friend/block actions on yourself.
-	if (sub == state.selfSubject)
-		return;
-
-	const bool blocked = state.IsBlocked(sub);
-
-	const int kAddFriend = wxID_HIGHEST + 1;
-	const int kBlock = wxID_HIGHEST + 2;
-	const int kUnblock = wxID_HIGHEST + 3;
-
-	wxMenu menu;
-	if (blocked)
-	{
-		menu.Append(kUnblock, "Unblock");
-	}
-	else
-	{
-		menu.Append(kAddFriend, "Add Friend");
-		menu.Append(kBlock, "Block");
-	}
-
-	const int choice = GetPopupMenuSelectionFromUser(menu);
-	if (choice == kAddFriend)
-		m_controller->SendFriendRequest(sub);
-	else if (choice == kBlock)
-		m_controller->Block(sub);
-	else if (choice == kUnblock)
-		m_controller->Unblock(sub);
-}
-
 void PartyTab::OnMemberRightClick(wxListEvent& event)
 {
 	if (!m_controller)
@@ -365,49 +207,4 @@ void PartyTab::OnInviteRightClick(wxListEvent& event)
 		m_controller->AcceptPartyInvite(inviteId);
 	else if (choice == kDecline)
 		m_controller->DeclinePartyInvite(inviteId);
-}
-
-void PartyTab::OnSend(wxCommandEvent& WXUNUSED(event))
-{
-	SendCurrent();
-}
-
-void PartyTab::OnEnter(wxCommandEvent& WXUNUSED(event))
-{
-	SendCurrent();
-}
-
-void PartyTab::OnLeave(wxCommandEvent& WXUNUSED(event))
-{
-	if (m_controller)
-		m_controller->LeaveParty();
-}
-
-void PartyTab::OnSize(wxSizeEvent& event)
-{
-	event.Skip(); // let the panel lay out normally
-
-	if (m_sashInit || !m_splitMain || !m_splitChat)
-		return;
-
-	const int h = m_splitMain->GetClientSize().GetHeight();
-	const int w = m_splitChat->GetClientSize().GetWidth();
-	if (h < 60 || w < 60)
-		return; // not laid out yet; try again on the next size event
-
-	// Top third for invites + selection; chat gets two-thirds of the bottom.
-	m_splitMain->SetSashPosition(h / 3);
-	m_splitChat->SetSashPosition(w * 2 / 3);
-	m_sashInit = true;
-}
-
-void PartyTab::SendCurrent()
-{
-	if (!m_controller)
-		return;
-	const wxString text = m_chatInput->GetValue();
-	if (text.empty())
-		return;
-	m_controller->SendPartyMessage(text.utf8_string());
-	m_chatInput->Clear();
 }

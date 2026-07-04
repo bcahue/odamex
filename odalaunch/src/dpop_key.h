@@ -55,7 +55,7 @@ class DpopKey
 
 	// Sign `message` with ES256 (SHA-256 then ECDSA P-256). Returns the raw JWS
 	// signature (r||s, 64 bytes) base64url-encoded with no padding -- ready to
-	// be the third segment of a compact JWS. Empty on failure. Used by C6.
+	// be the third segment of a compact JWS. Empty on failure.
 	std::string SignEs256(const std::string& message) const;
 
   private:

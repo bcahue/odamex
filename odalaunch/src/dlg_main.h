@@ -76,7 +76,9 @@ wxDECLARE_EVENT(wxEVT_THREAD_WORKER_SIGNAL, wxCommandEvent);
 class ChatTab;
 class FriendsTab;
 class PartyTab;
+class PartyChatPanel;
 class PlayersTab;
+class wxButton;
 class wxTaskBarIcon;
 class wxIconizeEvent;
 
@@ -113,6 +115,18 @@ protected:
 	void OnOpenReportBug(wxCommandEvent& event);
 	void OnAbout(wxCommandEvent& event);
 	void OnOpenChat(wxCommandEvent& event);
+
+	// Corner "Party" toggle: show/hide the right Party/Friends panel and the
+	// bottom party-chat strip together, then relayout the frame.
+	void OnToggleSocial(wxCommandEvent& event);
+	// Apply m_SocialVisible to the panels + toggle button (and enable/disable
+	// the button based on sign-in). Call after sign-in/out and on toggle.
+	void UpdateSocialPanels(bool signedIn);
+
+	// Leave Party lives in the social panel's right-hand bottom bar (so it lines
+	// up with the corner toggle); shown only while in a party.
+	void OnLeaveParty(wxCommandEvent& event);
+	void UpdatePartyLeaveButton();
 
 	// Account / authentication (shipping plan C10)
 	void OnAccountLogin(wxCommandEvent& event);
@@ -221,6 +235,14 @@ protected:
 	// Players tab — an XRC-subclassed PlayersTab: blocked players (with Unblock)
 	// and, once matchmaking lands, recently-played-with players.
 	PlayersTab* m_PlayersTab;
+
+	// The collapsible social UI: the right-side panel hosts the Party/Friends
+	// notebook; the bottom strip is the party chat. Both are toggled together by
+	// the "Party" toolbar button and hidden until shown.
+	wxPanel* m_SocialRightPanel = nullptr;
+	PartyChatPanel* m_PartyChatPanel = nullptr;
+	wxButton* m_PartyLeaveBtn = nullptr;
+	bool m_SocialVisible = false;
 
 	wxStatusBar* m_StatusBar;
 	wxProcess* m_Process;
