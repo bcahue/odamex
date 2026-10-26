@@ -31,7 +31,9 @@ Compression=lzma2
 SolidCompression=true
 AlwaysShowDirOnReadyPage=true
 ChangesEnvironment=true
-AppID={{2E517BBB-916F-4AB6-80E0-D4A292513F7A}}
+; This looks strange but is actually correct. A literal { in innosetup is written as {{
+; but no special escaping is needed for the }
+AppID={{2E517BBB-916F-4AB6-80E0-D4A292513F7A}
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ShowLanguageDialog=auto
@@ -92,12 +94,12 @@ Source: {#SourcePath}\OutX64\odamex.exe; DestDir: {app}; Flags: ignoreversion; C
 Source: {#SourcePath}\OutX64\odasrv.exe; DestDir: {app}; Flags: ignoreversion; Components: server; Check: Is64BitInstallMode
 Source: {#SourcePath}\OutX64\SDL2_mixer.dll; DestDir: {app}; Flags: ignoreversion; Components: client; Check: Is64BitInstallMode
 Source: {#SourcePath}\OutX64\SDL2.dll; DestDir: {app}; Flags: ignoreversion; Components: client; Check: Is64BitInstallMode
-Source: {#SourcePath}\OutX64\wxbase332u_net_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
-Source: {#SourcePath}\OutX64\wxbase332u_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
-Source: {#SourcePath}\OutX64\wxbase332u_xml_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
-Source: {#SourcePath}\OutX64\wxmsw332u_core_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
-Source: {#SourcePath}\OutX64\wxmsw332u_html_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
-Source: {#SourcePath}\OutX64\wxmsw332u_xrc_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
+Source: {#SourcePath}\OutX64\wxbase334u_net_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
+Source: {#SourcePath}\OutX64\wxbase334u_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
+Source: {#SourcePath}\OutX64\wxbase334u_xml_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
+Source: {#SourcePath}\OutX64\wxmsw334u_core_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
+Source: {#SourcePath}\OutX64\wxmsw334u_html_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
+Source: {#SourcePath}\OutX64\wxmsw334u_xrc_vc14x_x64.dll; DestDir: {app}; Flags: ignoreversion; Components: launcher; Check: Is64BitInstallMode
 Source: {#SourcePath}\OutX64\redist\VC_redist.x64.exe; DestDir: {tmp}; Flags: dontcopy
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -136,6 +138,12 @@ Type: files; Name: "{app}\wxbase315u_xml_vc14x.dll"
 Type: files; Name: "{app}\wxmsw315u_core_vc14x.dll"
 Type: files; Name: "{app}\wxmsw315u_html_vc14x.dll"
 Type: files; Name: "{app}\wxmsw315u_xrc_vc14x.dll"
+Type: files; Name: "{app}\wxbase332u_net_vc14x_x64.dll"
+Type: files; Name: "{app}\wxbase332u_vc14x_x64.dll"
+Type: files; Name: "{app}\wxbase332u_xml_vc14x_x64.dll"
+Type: files; Name: "{app}\wxmsw332u_core_vc14x_x64.dll"
+Type: files; Name: "{app}\wxmsw332u_html_vc14x_x64.dll"
+Type: files; Name: "{app}\wxmsw332u_xrc_vc14x_x64.dll"
 
 [Icons]
 Name: {group}\Odamex Client; Filename: {app}\odamex.exe; WorkingDir: {app}
@@ -345,7 +353,7 @@ begin
 end;
 
 
-function VC2017RedistNeedsInstall(Platform: String): Boolean;
+function VCRedistNeedsInstall(Platform: String): Boolean;
 var
   Version: String;
   KeyLocation: String;
@@ -355,9 +363,9 @@ begin
        KeyLocation, 'Version',
        Version) then
   begin
-    // Is the installed version at least 14.40?
+    // Is the installed version new enough?
     Log('VC Redist Version check : found ' + Version);
-    Result := (CompareVersion(Version, 'v14.40.33810.0')>0);
+    Result := (CompareVersion(Version, '{#VCRedistVersion}')>0);
   end
   else
   begin
@@ -374,13 +382,13 @@ end;
 Filename: "{tmp}\VC_redist.x64.exe"; \
   StatusMsg: "Installing VC++ Runtime"; \
   Parameters: "/install /passive /norestart"; \
-  Check: VC2017RedistNeedsInstall('x64') and Is64BitInstallMode; \
+  Check: VCRedistNeedsInstall('x64') and Is64BitInstallMode; \
   Flags: waituntilterminated
 
 Filename: "{tmp}\VC_redist.x86.exe"; \
   StatusMsg: "Installing VC++ Runtime"; \
   Parameters: "/install /passive /norestart"; \
-  Check: VC2017RedistNeedsInstall('x86') and (not Is64BitInstallMode); \
+  Check: VCRedistNeedsInstall('x86') and (not Is64BitInstallMode); \
   Flags: waituntilterminated
 
 Filename: {app}\odalaunch.exe; Description: {cm:LaunchProgram,Odalaunch}; Flags: nowait postinstall skipifsilent

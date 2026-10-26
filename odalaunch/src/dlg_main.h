@@ -30,6 +30,7 @@
 #include "lst_players.h"
 #include "lst_servers.h"
 #include "lst_srvdetails.h"
+#include "ctrl_popover.h"
 
 #include "dlg_about.h"
 #include "dlg_config.h"
@@ -53,6 +54,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <unordered_map>
 
 #include "query_thread.h"
 #include "net_packet.h"
@@ -81,6 +83,7 @@ class PlayersTab;
 class wxButton;
 class wxTaskBarIcon;
 class wxIconizeEvent;
+class dlgServerDetails;
 
 class dlgMain : public wxFrame, wxThreadHelper
 {
@@ -101,6 +104,13 @@ public:
 	odalpapi::Server         NullServer;
 	std::unique_ptr<odalpapi::Server[]> QServer;
 	odalpapi::MasterServer   MServer;
+
+	// Connects to a server (password prompt + launch). Public so the server
+	// details dialog can trigger a join. DialogParent owns any dialogs shown.
+	void ConnectToServer(const odalpapi::Server& s,
+	                     wxWindow* DialogParent = NULL);
+
+	void ApplyServerRefresh(const odalpapi::Server& Refreshed);
 
 protected:
 	void OnMenuServers(wxCommandEvent& event);
@@ -149,6 +159,14 @@ protected:
 	void OnServerListClick(wxListEvent& event);
 	void OnServerListDoubleClick(wxListEvent& event);
 
+	void OnServerListMiddleDown(wxMouseEvent& event);
+	void OnViewServerDetails(wxCommandEvent& event);
+
+	// Hover popovers (server info / player list)
+	void OnServerListMouseMove(wxMouseEvent& event);
+	void OnServerListMouseLeave(wxMouseEvent& event);
+	void HideHoverPopovers();
+
 	void OnCheckVersion(wxCommandEvent &event);
 	void SendCheckVersionRequest();
 	#if ODALAUNCH_USE_WEB_REQUEST
@@ -184,9 +202,9 @@ protected:
 	wxInt32 FindServer(wxString);
 	wxInt32 GetSelectedServerArrayIndex();
 
-	bool ClientIsRunning()
+	bool ClientIsRunning() const
 	{
-		return m_ClientIsRunning;
+		return !m_Processes.empty();
 	};
 
 	// authServerId > 0 (from an authenticated server's broadcast
@@ -206,12 +224,28 @@ protected:
 	void RefreshCommunityPlayers();
 
 	LstOdaServerList* m_LstCtrlServers;
+
+	// Permanent fallback panels, used when frameless popovers are unavailable
+	// (wxUSE_POPUPWIN 0). When popovers are available these are collapsed
+	// out of the layout and the same data is shown on hover instead.
 	LstOdaPlayerList* m_LstCtrlPlayers;
 	LstOdaSrvDetails* m_LstOdaSrvDetails;
+
+	#if wxUSE_POPUPWIN
+	ServerInfoPopover* m_ServerInfoPopover;
+	PlayerListPopover* m_PlayerListPopover;
+
+	// Currently hovered row/column that owns a visible popover (-1 = none)
+	long m_HoverItem;
+	int  m_HoverColumn;
+	#endif
 
 	dlgConfig* config_dlg;
 	dlgServers* server_dlg;
 	dlgAbout* AboutDialog;
+
+	// Reused across opens so the heavy one-time build is paid only once.
+	dlgServerDetails* m_ServerDetailsDlg = nullptr;
 
 	wxPanel* m_PnlServerFilter;
 	wxSearchCtrl* m_SrchCtrlGlobal;
@@ -245,7 +279,7 @@ protected:
 	bool m_SocialVisible = false;
 
 	wxStatusBar* m_StatusBar;
-	wxProcess* m_Process;
+	std::unordered_map<int, std::unique_ptr<wxProcess>> m_Processes;
 
 	// System-tray icon, created lazily the first time the launcher minimizes to
 	// tray (or to host a notification balloon); null until then. Removed + deleted
@@ -256,7 +290,6 @@ protected:
 	bool m_TrayIconTransient = false;
 
 	bool m_UpdateCheckWasAutomatic = false;
-	bool m_ClientIsRunning;
 
 	OdaInfoBar *InfoBar;
 

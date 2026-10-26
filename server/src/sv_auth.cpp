@@ -399,7 +399,7 @@ bool SV_AuthRegisterJti(const std::string& jti, int64_t expiresAt)
 	return true;
 }
 
-void STACK_ARGS SV_AuthShutdown()
+void SV_AuthShutdown()
 {
 	s_keyCache.clear();
 	s_seenJtis.clear();

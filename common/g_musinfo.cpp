@@ -34,7 +34,7 @@ void G_ParseMusInfo()
 	while ((lump = W_FindLump("MUSINFO", lump)) != -1)
 	{
 		LevelInfos& levels = getLevelInfos();
-		const char* buffer = static_cast<char*>(W_CacheLumpNum(lump, PU_STATIC));
+		const char* buffer = W_CacheLumpNum<char>(lump, PU_STATIC);
 
 		const OScannerConfig config = {
 		    "MUSINFO", // lumpName
@@ -121,18 +121,4 @@ void S_ClearMusInfo()
 	musinfo.mapthing.init(nullptr);
 	musinfo.lastmapthing.init(nullptr);
 	musinfo.savedmusic.clear();
-}
-
-void P_SerializeMusInfo(FArchive& arc)
-{
-	if (arc.IsStoring())
-	{
-		arc << musinfo.savedmusic.c_str();
-	}
-	else
-	{
-		arc >> musinfo.savedmusic;
-		if (!musinfo.savedmusic.empty())
-			S_ChangeMusic(musinfo.savedmusic, true);
-	}
 }

@@ -58,7 +58,9 @@ R_MakeSpans
   int		b2 );
 
 void R_DrawPlanes (void);
-void R_DrawSkyBoxes (void);
+void R_DrawPortals (void);
+
+bool R_IsStackBoundary(const AActor* mo);
 
 visplane_t *R_FindPlane
 ( const plane_t	&secplane,

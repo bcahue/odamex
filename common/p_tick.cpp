@@ -48,9 +48,14 @@ void P_AnimationTick(AActor *mo);
 //
 // P_Ticker
 //
-void P_Ticker (void)
+void P_Ticker (bool runAllThinkers)
 {
 #ifdef CLIENT_APP
+	if (paused && displayplayer().isFreecam)
+	{
+		displayplayer().mo->RunThink();
+	}
+
 	// Game pauses when in the menu and not online/demo
 	if ((paused || (!multiplayer && !demoplayback &&
 		(menuactive || ConsoleState == c_down || ConsoleState == c_falling))) &&
@@ -85,7 +90,10 @@ void P_Ticker (void)
 		P_AnimationTick(player.mo);
 	}
 
-	DThinker::RunThinkers ();
+	if (runAllThinkers)
+	{
+		DThinker::RunThinkers ();
+	}
 
 	P_UpdateSpecials ();
 	P_RespawnSpecials ();

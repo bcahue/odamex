@@ -28,15 +28,13 @@
 #define MAX_SNDNAME 63
 
 class AActor;
-class player_s;
-typedef player_s player_t;
+class FArchive;
+class player_t;
 
 //
 // SoundFX struct.
 //
-typedef struct sfxinfo_struct sfxinfo_t;
-
-struct sfxinfo_struct
+struct sfxinfo_t
 {
 	char name[MAX_SNDNAME + 1]; // [RH] Sound name defined in SNDINFO
 	unsigned normal;            // Normal sample handle
@@ -175,6 +173,8 @@ void S_StopMusic();
 void S_PauseMusic();
 void S_ResumeMusic();
 
+void P_SerializeMusic(FArchive& arc);
+
 //
 // Updates music & sounds
 //
@@ -208,7 +208,7 @@ void S_NoiseDebug();
 // The following functions work seamlessly on local clients and networked games.
 
 #if SERVER_APP
-#include "sv_main.h"
+#include "sv_sound.h"
 #endif
 
 inline static void S_NetSound(const AActor* mo, byte channel, const char* name, const byte attenuation)

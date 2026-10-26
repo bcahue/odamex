@@ -138,6 +138,9 @@ EXTERN_CVAR(g_preroundreset)
 EXTERN_CVAR(cl_showsprees)
 EXTERN_CVAR(cl_showofflinesprees)
 EXTERN_CVAR(sv_showsprees)
+EXTERN_CVAR(cl_showmultikills)
+EXTERN_CVAR(cl_showofflinemultikills)
+EXTERN_CVAR(sv_showmultikills)
 
 void ST_unloadNew()
 {
@@ -485,6 +488,69 @@ void ST_voteDraw (int y) {
 
 namespace hud {
 
+//
+// The centered message column.
+//
+// The levelstate banner, the spree lines, the multikill line and the stack of
+// centered text above the bottom of the screen all share the middle of the
+// screen.
+// Each drawer claims the rows it uses so the ones that run after it stack
+// clear instead of drawing on top.
+// Claims last for a single frame and are made in draw order.
+//
+
+namespace
+{
+
+// First free row from the top, and one past the last free row from the bottom.
+int msgColumnTop;
+int msgColumnBottom;
+
+} // namespace
+
+// Rows of breathing room to leave between two blocks in the column.
+int MessageColumnPad()
+{
+	return 2 * ::CleanYfac;
+}
+
+int MessageColumnTop()
+{
+	return msgColumnTop;
+}
+
+int MessageColumnBottom()
+{
+	return msgColumnBottom;
+}
+
+void ClaimMessageColumnTop(const int bottom)
+{
+	msgColumnTop = std::max(msgColumnTop, bottom);
+}
+
+void ClaimMessageColumnBottom(const int top)
+{
+	msgColumnBottom = std::min(msgColumnBottom, top);
+}
+
+/**
+ * @brief Claim the centered stack that grows up from the bottom of the screen.
+ *
+ * @param iy Height the stack reached, in the unscaled units the HUD uses.
+ */
+void ClaimBottomStack(const int iy)
+{
+	const int yscale = std::max(1, int(::hud_scale * ::CleanYfac));
+	ClaimMessageColumnBottom(I_GetSurfaceHeight() - (iy * yscale));
+}
+
+void ResetMessageColumn()
+{
+	msgColumnTop = 0;
+	msgColumnBottom = I_GetSurfaceHeight();
+}
+
 /**
  * @brief This is the number of pixels of viewable space, taking into account
  *        the status bar.  We need to convert this into scaled pixels as
@@ -554,7 +620,7 @@ static void drawTeamGametype()
 
 	for (int i = 0; i < sv_teamsinplay; i++)
 	{
-		TeamInfo* teamInfo = GetTeamInfo((team_t)i);
+		TeamInfo* teamInfo = GetTeamInfo(static_cast<team_t>(i));
 		if (shouldShowScores)
 		{
 			patchPosY -= FLAG_ICON_HEIGHT;
@@ -719,6 +785,21 @@ static void drawGametype()
 
 size_t proto_selected;
 
+static int ProtoRowColor(int cmd)
+{
+	// Give each protocol header its own unique color.
+	int rowColor = cmd % (NUM_TEXT_COLORS - 2);
+	if (rowColor >= CR_WHITE)
+	{
+		rowColor++;
+	}
+	if (rowColor >= CR_UNTRANSLATED)
+	{
+		rowColor++;
+	}
+	return rowColor;
+}
+
 /**
  * @brief Draw protocol buffer packets
  */
@@ -730,16 +811,17 @@ void drawProtos()
 
 	V_SetFont("DIGFONT");
 
-	proto_selected = clamp(proto_selected, (size_t)0, protos.size() - 1);
+	proto_selected = std::clamp<size_t>(proto_selected, 0, protos.size() - 1);
 
 	// Starting y is five rows from the top.
-	int y = 7 * 5;
+	const int top = 7 * 5;
+	const float scale = 0.75f;
+	int y = top;
 
 	const int indent = V_StringWidth(" >");
 
 	for (Protos::const_iterator it = protos.begin(); it != protos.end(); ++it)
 	{
-		static constexpr double scale = 0.75;
 		const bool selected = proto_selected == (it - protos.begin());
 
 		if (selected)
@@ -749,12 +831,7 @@ void drawProtos()
 			              " >", CR_GOLD, true);
 		}
 
-		// Give each protocol header its own unique color.
-		int rowColor = it->header % (NUM_TEXT_COLORS - 2);
-		if (rowColor >= CR_WHITE)
-			rowColor++;
-		if (rowColor >= CR_UNTRANSLATED)
-			rowColor++;
+		const int rowColor = ProtoRowColor(it->header);
 
 		// Draw name
 		hud::DrawText(indent, y, scale, hud::X_LEFT, hud::Y_TOP, hud::X_LEFT, hud::Y_TOP,
@@ -764,11 +841,36 @@ void drawProtos()
 		if (selected)
 		{
 			// Draw data
-			hud::DrawText(indent, y, 0.75, hud::X_LEFT, hud::Y_TOP, hud::X_LEFT,
+			hud::DrawText(indent, y, scale, hud::X_LEFT, hud::Y_TOP, hud::X_LEFT,
 			              hud::Y_TOP, it->data.c_str(), CR_WHITE, true);
 			y += V_StringHeight(it->data.c_str());
 		}
 	}
+
+	// Now draw the recorded PlayerInput.
+	y = top;
+	hud::DrawText(
+	        130, y,
+	        scale,
+	        hud::X_RIGHT,
+	        hud::Y_TOP,
+	        hud::X_LEFT,
+	        hud::Y_TOP,
+	        ::msg_info[clc_playerinput].getName(),
+	        ProtoRowColor(clc_playerinput),
+	        true);
+
+	y += V_StringHeight(::msg_info[clc_playerinput].getName());
+	hud::DrawText(
+	        130, y,
+	        scale,
+	        hud::X_RIGHT,
+	        hud::Y_TOP,
+	        hud::X_LEFT,
+	        hud::Y_TOP,
+	        ::localcmds[::last_received % MAXSAVETICS].DebugString().c_str(),
+	        ProtoRowColor(clc_playerinput),
+	        true);
 
 	V_SetFont("SMALLFONT");
 }
@@ -776,7 +878,7 @@ void drawProtos()
 // [AM] Draw netdemo state
 // TODO: This is ripe for commonizing, but I _need_ to get this done soon.
 void drawNetdemo() {
-	if (!(netdemo.isPlaying() || netdemo.isPaused())) {
+	if (not netdemo.isInPlayback()) {
 		return;
 	}
 
@@ -840,8 +942,8 @@ static void drawLevelStats()
 	int num_ax = 0, text_ax = 0;
 	if (hud_anchoring.value() < 1.0f)
 	{
-		num_ax = (((float)I_GetSurfaceWidth() - (float)I_GetSurfaceHeight() * 4.0f / 3.0f) / 2.0f) * (1.0f - hud_anchoring.value());
-		num_ax = MAX(0, num_ax);
+		num_ax = ((static_cast<float>(I_GetSurfaceWidth()) - static_cast<float>(I_GetSurfaceHeight()) * 4.0f / 3.0f) / 2.0f) * (1.0f - hud_anchoring.value());
+		num_ax = std::max(0, num_ax);
 		text_ax = num_ax / xscale;
 	}
 
@@ -934,8 +1036,8 @@ void OdamexHUD() {
 	int num_ax = 0, text_ax = 0, patch_ax = 0;
 	if (hud_anchoring.value() < 1.0f)
 	{
-		num_ax = (((float)I_GetSurfaceWidth() - (float)I_GetSurfaceHeight() * 4.0f / 3.0f) / 2.0f) * (1.0f - hud_anchoring.value());
-		num_ax = MAX(0, num_ax);
+		num_ax = ((static_cast<float>(I_GetSurfaceWidth()) - static_cast<float>(I_GetSurfaceHeight()) * 4.0f / 3.0f) / 2.0f) * (1.0f - hud_anchoring.value());
+		num_ax = std::max(0, num_ax);
 		text_ax = num_ax / xscale;
 		patch_ax = num_ax / xscale;
 	}
@@ -1014,13 +1116,14 @@ void OdamexHUD() {
 		if (::hud_bigfont)
 			V_SetFont("BIGFONT");
 
-		hud::DrawText(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
-		              hud::Y_BOTTOM, hud::Timer().c_str(), CR_GREY);
+		hud::DrawTimerText(iy, CR_GREY);
 		iy += V_LineHeight() + 1;
 
 		if (::hud_bigfont)
 			V_SetFont("SMALLFONT");
 	}
+
+	iy = hud::DrawRespawnText(iy);
 
 	if (::hud_speedometer && ::consoleplayer_id == ::displayplayer_id)
 	{
@@ -1046,6 +1149,8 @@ void OdamexHUD() {
 	hud::EATargets(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
 	               hud::Y_BOTTOM, 1, hud_targetcount);
 	iy += V_LineHeight() + 1;
+
+	ClaimBottomStack(iy);
 
 	// Draw stat lines.  Vertically aligned with the bottom of the armor
 	// number on the other side of the screen.
@@ -1238,22 +1343,12 @@ void ToastTicker()
 	const int fadeDoneTics = (hud_feedtime * float(TICRATE));
 
 	// Remove stale toasts in a loop.
-	drawToasts_t::iterator it = g_Toasts.begin();
-	while (it != g_Toasts.end())
-	{
-		const int tics = ::gametic - it->tic;
-
+	std::erase_if(g_Toasts, [fadeDoneTics](const drawToast_t& toast){
 		// The gametic may move backwards in case of netdemo rewinding
 		// If this happens, we need to remove the toast as it hasn't happened yet.
-		if (tics >= fadeDoneTics || it->tic > ::gametic)
-		{
-			it = g_Toasts.erase(it);
-		}
-		else
-		{
-			++it;
-		}
-	}
+		const int tics = ::gametic - toast.tic;
+		return tics >= fadeDoneTics || toast.tic > ::gametic;
+	});
 }
 
 void PushToast(const toast_t& toast)
@@ -1359,7 +1454,7 @@ static std::string WinToColorString(const WinInfo& win)
 	}
 	else if (win.type == WinInfo::WIN_TEAM)
 	{
-		const TeamInfo& tm = *GetTeamInfo((team_t)win.id);
+		const TeamInfo& tm = *GetTeamInfo(static_cast<team_t>(win.id));
 		if (tm.Team == TEAM_NONE)
 		{
 			buf = fmt::sprintf(TEXTCOLOR_GREEN "???" TEXTCOLOR_NORMAL);
@@ -1379,49 +1474,33 @@ static std::string WinToColorString(const WinInfo& win)
 struct levelStateLines_t
 {
 	std::string title;
-	std::string subtitle[4];
-	float lucent;
-	levelStateLines_t() : lucent(1.0f) { }
+	std::array<std::string, 4> subtitle;
+	float lucent = 1.0f;
 };
 
 struct multiKillLines_t
 {
 	std::string multiKillText;
-	EColorRange color;
-	float lucent;
-	multiKillLines_t() : lucent(1.0f), color(CR_GRAY) { }
-};
-
-struct bigSpreeLine_t
-{
-	std::string spreeText;
-	EColorRange color;
-	float lucent;
-	bigSpreeLine_t() : lucent(1.0f), color(CR_GRAY) { }
-};
-
-struct smallSpreeLine_t
-{
-	std::string spreeText;
-	float lucent;
-	smallSpreeLine_t() : lucent(1.0f) { }
+	EColorRange color = CR_GRAY;
+	float lucent = 1.0f;
 };
 
 static float lucentFade(int tics, const int start, const int end)
 {
+	// A negative tic count means the event hasn't happened yet - we rewound a netdemo
+	// past it.
+	if (tics < 0 || tics >= end)
+	{
+		return 0.0f;
+	}
+
 	if (tics < start)
 	{
 		return 1.0f;
 	}
-	else if (tics < end)
-	{
-		tics %= TICRATE;
-		return static_cast<float>(TICRATE - tics) / TICRATE;
-	}
-	else
-	{
-		return 0.0f;
-	}
+
+	tics %= TICRATE;
+	return static_cast<float>(TICRATE - tics) / TICRATE;
 }
 
 static void LevelStateHorde(levelStateLines_t& lines)
@@ -1488,208 +1567,185 @@ static void LevelStateHorde(levelStateLines_t& lines)
 	lines.lucent = lucentFade(tics, TICRATE * 3, TICRATE * 4);
 }
 
-void DisplaySmallSpreeBreaker(const SpreeBreaker_t& breaker)
+namespace
 {
-	smallSpreeLine_t line;
 
-	line.spreeText = breaker.spreeEndedBroadcastText;
+// The small line - another player's spree, or a spree breaker - stacked above
+// the watched player's own big line.
+// Either half can be absent.
+struct spreeBlock_t
+{
+	StringTokens smallLines;
+	float smallLucent = 0.0f;
+	std::string bigText;
+	EColorRange bigColor = CR_GRAY;
+	float bigLucent = 0.0f;
+};
 
-	V_SetFont("SMALLFONT");
+/**
+ * @brief Break a spree line to fit the screen.
+ *        Breakers name two players and a spree title, so they outgrow the
+ *        screen readily.
+ *
+ * @param text Line to break, measured with the font that is currently set.
+ */
+StringTokens BreakSpreeLine(const std::string& text)
+{
+	StringTokens lines;
 
-	const int surface_width = I_GetSurfaceWidth(), surface_height = I_GetSurfaceHeight();
-	int w = V_StringWidth(line.spreeText.c_str()) * CleanYfac;
-	int h = 8 * CleanYfac;
+	// Spree text is stretched by CleanYfac on both axes, so the width budget is
+	// the surface width in those units, less a small margin.
+	const int maxwidth = (I_GetSurfaceWidth() / std::max(1, ::CleanYfac)) - 8;
 
-	line.lucent = lucentFade(::gametic - breaker.spreeEndedTic, TICRATE * 3, TICRATE * 4);
-
-	const float oldtrans = ::hud_transparency;
-	::hud_transparency = line.lucent;
-
-	if (::hud_transparency > 0.0f)
+	brokenlines_t* broken = V_BreakLines(maxwidth, text.c_str());
+	if (broken == nullptr)
 	{
-		int y = (surface_height / 4) - h / 2;
-		::screen->DrawTextStretchedLuc(CR_GRAY,
-		                               surface_width / 2 - w / 2, y - (12 * ::CleanYfac),
-		                               line.spreeText.c_str(), ::CleanYfac, ::CleanYfac);
+		lines.push_back(text);
+		return lines;
 	}
 
-	::hud_transparency.ForceSet(oldtrans);
+	for (int i = 0; broken[i].width != -1; i++)
+	{
+		lines.emplace_back(broken[i].string);
+	}
+
+	V_FreeBrokenLines(broken);
+
+	if (lines.empty())
+	{
+		lines.push_back(text);
+	}
+
+	return lines;
 }
 
-void DisplayPlayerNormalSpree(const SpreeRecord_t& record)
+void DrawSpreeBlock(const spreeBlock_t& block)
 {
-	// We handle "still dominating" sprees elsewhere.
-	if (record.stillDominating)
+	const bool hasSmall = not block.smallLines.empty() and block.smallLucent > 0.0f;
+	const bool hasBig = not block.bigText.empty() and block.bigLucent > 0.0f;
+
+	if (not hasSmall and not hasBig)
+	{
 		return;
-
-	bigSpreeLine_t line;
-
-	line.spreeText = record.spree.spreeText;
-	line.color = record.spree.color;
-
-	V_SetFont("BIGFONT");
+	}
 
 	const int surface_width = I_GetSurfaceWidth(), surface_height = I_GetSurfaceHeight();
-	int w = V_StringWidth(line.spreeText.c_str()) * CleanYfac;
-	int h = 12 * CleanYfac;
+	const int smallHeight = 8 * ::CleanYfac;
+	const int bigHeight = 12 * ::CleanYfac;
 
-	line.lucent = lucentFade(::gametic - record.spreeStartTic, TICRATE * 3, TICRATE * 4);
+	const int smallBlock =
+	    hasSmall ? (static_cast<int>(block.smallLines.size()) * smallHeight) +
+	                   (2 * ::CleanYfac)
+	             : 0;
+	const int height = smallBlock + (hasBig ? bigHeight : 0);
+	const int pad = MessageColumnPad();
+
+	// The big line keeps its old spot a quarter of the way down the screen, with
+	// the small lines stacked above it.
+	int top = (surface_height / 4) - (bigHeight / 2) - smallBlock;
+
+	// Stack below whatever claimed the column first, but don't push so far down
+	// that we meet the stack coming up from the bottom.
+	top = std::max(top, MessageColumnTop() + pad);
+	if (top + height > MessageColumnBottom() - pad)
+	{
+		top = std::max(MessageColumnTop() + pad, MessageColumnBottom() - pad - height);
+	}
 
 	const float oldtrans = ::hud_transparency;
-	::hud_transparency = line.lucent;
 
-	if (::hud_transparency > 0.0f)
+	if (hasSmall)
 	{
-		int y = (surface_height / 4) - h / 2;
-		::screen->DrawTextStretchedLuc(line.color, surface_width / 2 - w / 2, y,
-		                               line.spreeText.c_str(), ::CleanYfac, ::CleanYfac);
+		V_SetFont("SMALLFONT");
+		::hud_transparency = block.smallLucent;
+
+		int y = top;
+		for (const std::string& line : block.smallLines)
+		{
+			const int w = V_StringWidth(line.c_str()) * ::CleanYfac;
+			::screen->DrawTextStretchedLuc(CR_GRAY, (surface_width / 2) - (w / 2), y,
+			                               line.c_str(), ::CleanYfac, ::CleanYfac);
+			y += smallHeight;
+		}
+	}
+
+	if (hasBig)
+	{
+		V_SetFont("BIGFONT");
+		::hud_transparency = block.bigLucent;
+
+		const int w = V_StringWidth(block.bigText.c_str()) * ::CleanYfac;
+		::screen->DrawTextStretchedLuc(block.bigColor, (surface_width / 2) - (w / 2),
+		                               top + smallBlock, block.bigText.c_str(),
+		                               ::CleanYfac, ::CleanYfac);
+
+		V_SetFont("SMALLFONT");
 	}
 
 	::hud_transparency.ForceSet(oldtrans);
 
-	V_SetFont("SMALLFONT");
+	ClaimMessageColumnTop(top + height);
 }
 
-void DisplaySmallSpree(const SpreeRecord_t& record)
-{
-	smallSpreeLine_t line;
-
-	line.spreeText = record.spree.spreeBroadcastText;
-
-	V_SetFont("SMALLFONT");
-
-	const int surface_width = I_GetSurfaceWidth(), surface_height = I_GetSurfaceHeight();
-	int w = V_StringWidth(line.spreeText.c_str()) * CleanYfac;
-	int h = 8 * CleanYfac;
-
-	line.lucent = lucentFade(::gametic - record.spreeStartTic, TICRATE * 3, TICRATE * 4);
-
-	const float oldtrans = ::hud_transparency;
-	::hud_transparency = line.lucent;
-
-	if (::hud_transparency > 0.0f)
-	{
-		int y = (surface_height / 4) - h / 2;
-		::screen->DrawTextStretchedLuc(CR_GRAY,
-		                               surface_width / 2 - w / 2, y - (12 * ::CleanYfac),
-		                               line.spreeText.c_str(), ::CleanYfac, ::CleanYfac);
-	}
-
-	::hud_transparency.ForceSet(oldtrans);
-}
+} // namespace
 
 void SpreeHud()
 {
-	if (!validplayer(displayplayer()) || !cl_showsprees || (!cl_showofflinesprees && !network_game) || (!sv_showsprees && network_game))
-		return;
-
-	static SpreeManager& manager = SpreeManager::getInstance();
-
-	// Display the current display player's spree if within time
-	// As big text
-	const player_t& p = displayplayer();
-
-	const SpreeRecord_t& spree_r = manager.getSpreeRecord(p.id);
-
-	// Main spree text
-	if (spree_r.playerId != -1 && !spree_r.stillDominating)
-	{
-		DisplayPlayerNormalSpree(spree_r);
-	}
-
-	// If we're not still dominating, check if someone else has a spree.
-	// We'll get the spree breaker as well, to compare and see which one to display.
-	const SpreeRecord_t& other_spree_r = manager.getLatestSpreeRecord(p.id);
-	const SpreeBreaker_t& global_spree_breaker = manager.getSpreeBreaker();
-
-	bool otherPlayerValid = false;
-	bool spreeBreakerValid = false;
-	bool playerStillDominatingValid = false;
-
-	if (spree_r.playerId == -1 && other_spree_r.playerId == -1 && global_spree_breaker.spreeEndedPlayerId == -1)
-	{
-		// All are invalid, bomb out here.
-		return;
-	}
-
-	// Still dominating text only shows up as small text.
-	if (spree_r.playerId != -1 && spree_r.stillDominating)
-	{
-		playerStillDominatingValid = true;
-	}
-
-	if (other_spree_r.playerId != -1)
-	{
-		otherPlayerValid = true;
-	}
-
-	if (global_spree_breaker.spreeEndedPlayerId != -1)
-	{
-		spreeBreakerValid = true;
-	}
-
-	if (!otherPlayerValid && !spreeBreakerValid && !playerStillDominatingValid)
+	if (!validplayer(displayplayer()) ||
+    !cl_showsprees ||
+    (!cl_showofflinesprees && !network_game)||
+    (!sv_showsprees && network_game))
 	{
 		return;
 	}
-	else if (otherPlayerValid && !spreeBreakerValid && !playerStillDominatingValid)
-	{
-		// Just display the other player's spree
-		DisplaySmallSpree(other_spree_r);
-	}
-	else if (!otherPlayerValid && spreeBreakerValid && !playerStillDominatingValid)
-	{
-		// Just display the spree breaker
-		DisplaySmallSpreeBreaker(global_spree_breaker);
-	}
-	else if (!otherPlayerValid && !spreeBreakerValid && playerStillDominatingValid)
-	{
-		// Just display the still dominating text.
-		DisplaySmallSpree(spree_r);
-	}
-	else
-	{
-		// All 3 are valid, compare times
-		if (other_spree_r.spreeStartTic > global_spree_breaker.spreeEndedTic)
-		{
 
-			if (other_spree_r.spreeStartTic > spree_r.spreeStartTic)
-			{
-				// Display other player's spree
-				DisplaySmallSpree(other_spree_r);
-			}
-			else
-			{
-				// Display still dominating
-				DisplaySmallSpree(spree_r);
-			}
-		}
-		else
-		{
-			if (global_spree_breaker.spreeEndedTic > spree_r.spreeStartTic)
-			{
-				// Display spree breaker
-				DisplaySmallSpreeBreaker(global_spree_breaker);
-			}
-			else
-			{
-				// Display still dominating
-				DisplaySmallSpree(spree_r);
-			}
-		}
+	const SpreeHudLines_t lines = P_GetSpreeHudLines(displayplayer().id);
+
+	spreeBlock_t block;
+
+	if (lines.bigSpree)
+	{
+		block.bigText = lines.bigSpree->spree.spreeText;
+		block.bigColor = lines.bigSpree->spree.color;
+		block.bigLucent = lucentFade(::gametic - lines.bigSpree->spreeStartTic,
+		                             SPREE_FADE_TICS, SPREE_DISPLAY_TICS);
 	}
+
+	// Breaking measures with the font the small lines get drawn in.
+	V_SetFont("SMALLFONT");
+
+	if (lines.smallBreaker)
+	{
+		block.smallLines = BreakSpreeLine(lines.smallBreaker->spreeEndedBroadcastText);
+		block.smallLucent = lucentFade(::gametic - lines.smallBreaker->spreeEndedTic,
+		                               SPREE_FADE_TICS, SPREE_DISPLAY_TICS);
+	}
+	else if (lines.smallSpree)
+	{
+		block.smallLines = BreakSpreeLine(lines.smallSpree->spree.spreeBroadcastText);
+		block.smallLucent = lucentFade(::gametic - lines.smallSpree->spreeStartTic,
+		                               SPREE_FADE_TICS, SPREE_DISPLAY_TICS);
+	}
+
+	DrawSpreeBlock(block);
 }
 
 void MultiKillHud()
 {
-	if (!validplayer(displayplayer()))
+	if (!validplayer(displayplayer()) ||
+    !cl_showmultikills ||
+    (!cl_showofflinemultikills && !network_game) ||
+    (!sv_showmultikills && network_game) ||
+    displayplayer().isFreecam)
+	{
 		return;
+	}
 
 	const player_t& p = displayplayer();
 	const MultiKillTics_s& tics = MultiKillManager::getInstance().getMultiKills(p.id);
 
 	// Display the current display player's multi kills
-	if (tics.multiKills > 1 && ::gametic - tics.lastKillTime < 4 * TICRATE)
+	if (tics.multiKills > 1 && ::gametic - tics.lastKillTime < SPREE_DISPLAY_TICS)
 	{
 		const MultiKillLevel_s& multi =
 		    MultiKillManager::getInstance().getMultiKillLevel(tics.multiKills);
@@ -1705,8 +1761,8 @@ void MultiKillHud()
 		int w = V_StringWidth(line.multiKillText.c_str()) * CleanYfac;
 		int h = 12 * CleanYfac;
 
-		line.lucent = lucentFade(::gametic - tics.lastKillTime,
-			                      TICRATE * 3, TICRATE * 4);
+		line.lucent = lucentFade(::gametic - tics.lastKillTime, SPREE_FADE_TICS,
+			                      SPREE_DISPLAY_TICS);
 
 		const float oldtrans = ::hud_transparency;
 		::hud_transparency = line.lucent;
@@ -1714,8 +1770,17 @@ void MultiKillHud()
 		if (::hud_transparency > 0.0f)
 		{
 			int y = surface_height - (surface_height / 4) - h / 2;
+
+			// Keep clear of the stack of centred text above the bottom of the
+			// screen - the timer, respawn text and the rest.
+			const int pad = MessageColumnPad();
+			y = std::min(y, MessageColumnBottom() - pad - h);
+			y = std::max(y, MessageColumnTop() + pad);
+
 			::screen->DrawTextStretchedLuc(line.color, surface_width / 2 - w / 2, y,
 				line.multiKillText.c_str(), ::CleanYfac, ::CleanYfac);
+
+			ClaimMessageColumnBottom(y);
 		}
 
 		::hud_transparency.ForceSet(oldtrans);
@@ -1736,7 +1801,7 @@ void LevelStateHUD()
 	switch (::levelstate.getState())
 	{
 	case LevelState::WARMUP: {
-		if (consoleplayer().spectator)
+		if (consoleplayer().spectator || displayplayer().isFreecam)
 		{
 			break;
 		}
@@ -1767,21 +1832,21 @@ void LevelStateHUD()
 	case LevelState::WARMUP_COUNTDOWN:
 	case LevelState::WARMUP_FORCED_COUNTDOWN: {
 		lines.title = fmt::sprintf("%s", G_GametypeName());
-		lines.subtitle[0] = fmt::sprintf("Match begins in " TEXTCOLOR_GREEN "%d",
-		                                 ::levelstate.getCountdown());
+		lines.subtitle[0] = fmt::sprintf("Match begins in " TEXTCOLOR_GREEN "%s",
+		                                 hud::Countdown());
 		break;
 	}
 	case LevelState::PREROUND_COUNTDOWN: {
 		lines.title = fmt::sprintf("Round " TEXTCOLOR_YELLOW " %d", ::levelstate.getRound());
-		if (g_preroundreset)
+		if (g_preroundreset || G_IsMatchDuelGame())
 		{
-			lines.subtitle[0] = fmt::sprintf("Round begins in " TEXTCOLOR_GREEN "%d",
-			                                 ::levelstate.getCountdown());
+			lines.subtitle[0] = fmt::sprintf("Round begins in " TEXTCOLOR_GREEN "%s",
+			                                 hud::Countdown());
 		}
 		else
 		{
-			lines.subtitle[0] = fmt::sprintf("Weapons unlocked in " TEXTCOLOR_GREEN "%d",
-			                                 ::levelstate.getCountdown());
+			lines.subtitle[0] = fmt::sprintf("Weapons unlocked in " TEXTCOLOR_GREEN "%s",
+			                                 hud::Countdown());
 		}
 		break;
 	}
@@ -1850,11 +1915,11 @@ void LevelStateHUD()
 			lines.subtitle[0] = fmt::sprintf("%s team wins the round",
 			                                 WinToColorString(win));
 		else if (G_IsCoopGame() || G_IsHordeMode())
-			lines.subtitle[0] = fmt::sprintf("Next attempt in " TEXTCOLOR_GREEN "%d",
-			                                 ::levelstate.getCountdown());
+			lines.subtitle[0] = fmt::sprintf("Next attempt in " TEXTCOLOR_GREEN "%s",
+			                                 hud::Countdown());
 		else
-			lines.subtitle[0] = fmt::sprintf("Next round in " TEXTCOLOR_GREEN "%d",
-			                                 ::levelstate.getCountdown());
+			lines.subtitle[0] = fmt::sprintf("Next round in " TEXTCOLOR_GREEN "%s",
+			                                 hud::Countdown());
 		break;
 	}
 	case LevelState::ENDGAME_COUNTDOWN: {
@@ -1877,8 +1942,8 @@ void LevelStateHUD()
 		else if (win.type == WinInfo::WIN_TEAM)
 			lines.subtitle[0] = fmt::sprintf("%s team wins!", WinToColorString(win));
 		else
-			lines.subtitle[0] = fmt::sprintf("Intermission in " TEXTCOLOR_GREEN "%d",
-			                                 ::levelstate.getCountdown());
+			lines.subtitle[0] = fmt::sprintf("Intermission in " TEXTCOLOR_GREEN "%s",
+			                                 hud::Countdown());
 		break;
 	}
 	default:
@@ -1889,36 +1954,55 @@ void LevelStateHUD()
 
 	const int surface_width = I_GetSurfaceWidth(), surface_height = I_GetSurfaceHeight();
 	int w = V_StringWidth(lines.title.c_str()) * CleanYfac;
-	int h = 12 * CleanYfac;
+	const int h = 12 * CleanYfac;
+
+	// Subtitle slots are filled out of order, so the block ends at the last one
+	// that actually holds text.
+	int lastsub = -1;
+	for (size_t i = 0; i < lines.subtitle.size(); i++)
+	{
+		if (not lines.subtitle[i].empty())
+			lastsub = static_cast<int>(i);
+	}
+
+	const int top = std::max((surface_height / 4) - (h / 2),
+	                         MessageColumnTop() + MessageColumnPad());
 
 	const float oldtrans = ::hud_transparency;
 	::hud_transparency = lines.lucent;
 
 	if (::hud_transparency > 0.0f)
 	{
-		::screen->DrawTextStretchedLuc(CR_GREY, surface_width / 2 - w / 2,
-		                               surface_height / 4 - h / 2, lines.title.c_str(),
-		                               ::CleanYfac, ::CleanYfac);
+		::screen->DrawTextStretchedLuc(CR_GREY, (surface_width / 2) - (w / 2), top,
+		                               lines.title.c_str(), ::CleanYfac, ::CleanYfac);
 	}
 
 	V_SetFont("SMALLFONT");
 	const int height = V_StringHeight("M") + 1;
 
-	for (size_t i = 0; i < ARRAY_LENGTH(lines.subtitle); i++)
+	// The title line plus the two rows the shorter small-font line height frees up.
+	const int subtop = top + (14 * ::CleanYfac);
+
+	for (size_t i = 0; i < lines.subtitle.size(); i++)
 	{
-		w = V_StringWidth(lines.subtitle[i].c_str()) * ::CleanYfac;
-		h = 8 * ::CleanYfac;
+		w = hud::StringWidthMono(lines.subtitle[i].c_str()) * ::CleanYfac;
 		if (::hud_transparency > 0.0f)
 		{
-			::screen->DrawTextStretchedLuc(
-			    CR_GREY, surface_width / 2 - w / 2,
-			    (surface_height / 4 - h / 2) + (12 * ::CleanYfac) +
-			        (i * height * ::CleanYfac),
-			    lines.subtitle[i].c_str(), ::CleanYfac, ::CleanYfac);
+			hud::DrawTextMonoAt((surface_width / 2) - (w / 2),
+			                    subtop + (i * height * ::CleanYfac), ::CleanYfac,
+			                    ::CleanYfac, lines.subtitle[i].c_str(), CR_GREY);
 		}
 	}
 
 	::hud_transparency.ForceSet(oldtrans);
+
+	// Claim what we drew so the spree lines stack underneath it.
+	if (lines.lucent > 0.0f and (not lines.title.empty() or lastsub >= 0))
+	{
+		const int bottom = (lastsub >= 0) ? subtop + ((lastsub + 1) * height * ::CleanYfac)
+		                                  : top + h;
+		ClaimMessageColumnTop(bottom);
+	}
 }
 
 // [AM] Spectator HUD.
@@ -1934,8 +2018,7 @@ void SpectatorHUD()
 			V_SetFont("BIGFONT");
 		}
 
-		hud::DrawText(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
-		              hud::Y_BOTTOM, hud::Timer().c_str(), CR_GREY);
+		hud::DrawTimerText(iy, CR_GREY);
 		iy += V_LineHeight() + 1;
 
 		if (::hud_bigfont)
@@ -1943,13 +2026,16 @@ void SpectatorHUD()
 	}
 
 	// Draw help text - spy player name is handled elsewhere.
-	hud::DrawText(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
-	              hud::Y_BOTTOM, hud::HelpText().c_str(), CR_GREY);
+	hud::DrawTextMono(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
+	                  hud::Y_BOTTOM, hud::HelpText().c_str(), CR_GREY);
 	iy += V_LineHeight() + 1;
 
 	// Draw targeted player names.
 	hud::EATargets(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
 	               hud::Y_BOTTOM, 1, 0);
+	iy += V_LineHeight() + 1;
+
+	ClaimBottomStack(iy);
 
 	// Draw gametype scoreboard
 	hud::drawGametype();
@@ -1963,10 +2049,11 @@ void DoomHUD()
 	// Draw warmup state or timer
 	if (hud_timer)
 	{
-		hud::DrawText(0, st_y, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
-		              hud::Y_BOTTOM, hud::Timer().c_str(), CR_UNTRANSLATED);
+		hud::DrawTimerText(st_y, CR_UNTRANSLATED);
 		st_y += V_LineHeight() + 1;
 	}
+
+	st_y = hud::DrawRespawnText(st_y);
 
 	if (::hud_speedometer && ::consoleplayer_id == ::displayplayer_id)
 	{
@@ -1988,6 +2075,8 @@ void DoomHUD()
 	               hud::Y_BOTTOM, 1, hud_targetcount);
 	st_y += V_LineHeight() + 1;
 
+	ClaimBottomStack(st_y);
+
 	// Draw gametype scoreboard
 	hud::drawGametype();
 
@@ -1996,6 +2085,39 @@ void DoomHUD()
 		hud::drawLevelStats();
 }
 
+void FreecamHUD()
+{
+	int iy = 4;
+
+	// Draw warmup state or timer
+	if (::hud_timer)
+	{
+		if (::hud_bigfont)
+		{
+			V_SetFont("BIGFONT");
+		}
+
+		hud::DrawTimerText(iy, CR_GREY);
+		iy += V_LineHeight() + 1;
+
+		if (::hud_bigfont)
+			V_SetFont("SMALLFONT");
+	}
+
+	hud::DrawText(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
+	              hud::Y_BOTTOM, "Freecam", CR_WHITE);
+	iy += V_LineHeight() + 1;
+
+	// Draw targeted player names.
+	hud::EATargets(0, iy, hud_scale, hud::X_CENTER, hud::Y_BOTTOM, hud::X_CENTER,
+	               hud::Y_BOTTOM, 1, 0);
+	iy += V_LineHeight() + 1;
+
+	ClaimBottomStack(iy);
+
+	// Draw gametype scoreboard
+	hud::drawGametype();
+}
 }
 
 BEGIN_COMMAND(netprotoup)

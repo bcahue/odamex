@@ -109,7 +109,7 @@ dlgConfig::dlgConfig(wxWindow* parent, wxWindowID id) :
 	m_ChkChat24HourTime = XRCCTRL(*this, "Id_ChkChat24HourTime", wxCheckBox);
 	m_ChkChatShowSeconds = XRCCTRL(*this, "Id_ChkChatShowSeconds", wxCheckBox);
 	#if !ODALAUNCH_USE_WEB_REQUEST
-	XRCSIZERITEM(*this, "Id_StBxSizerUpdates")->Show(false);
+	XRCCTRL(*this, "Id_PanelUpdates", wxPanel)->Show(false);
 	#endif
 	m_ChkCtrlCheckForUpdates = XRCCTRL(*this, "Id_ChkCtrlCheckForUpdates", wxCheckBox);
 	m_ChkCtrlEnableBroadcasts = XRCCTRL(*this, "Id_ChkCtrlEnableBroadcasts", wxCheckBox);

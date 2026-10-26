@@ -65,4 +65,4 @@ bool SV_AuthReady();
 bool SV_AuthRegisterJti(const std::string& jti, int64_t expiresAt);
 
 // Cleanup. Called on server shutdown via atterm.
-void STACK_ARGS SV_AuthShutdown();
+void SV_AuthShutdown();

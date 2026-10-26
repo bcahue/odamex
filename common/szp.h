@@ -33,151 +33,132 @@
 //  And, as a bonus, on every pointer access, a NULL check can throw a
 //  specific exception. Naturally, you should always be careful with pointers.
 //
+//  electricbrass - the new and improved thread-safe szp
+//
+//  szp now uses std::shared_ptr internally, which replaces the linked list
+//  with an atomic reference count for thread-safe copying.
+//
+//  All copies of an szp can also be nulled safely in a multi-threaded
+//  environment, as the raw pointer shared by the copies is atomic.
+//
+//  Note that only szp operations are thread-safe. Just like std::shared_ptr,
+//  the pointed-to object will need to bring its own thread-safety mechanism
+//  if it will be mutated while shared across threads.
+//
 //-----------------------------------------------------------------------------
 
 
 #pragma once
 
+#include <atomic>
+#include <bit>
+#include <functional>       // for std::hash.
+#include <memory>
+#include <utility>
+
+#include "errors.h"
 #include "m_stacktrace.h"
 
 template <typename T>
 class szp
 {
-	// pointer to a common raw pointer
-	T **naive;
-
-	// circular linked list
-	szp *prev, *next;
-
-	// this should never be used
-	// spawn from other pointers, or use init()
-	szp &operator=(T *other) = delete;
-
-	// utility function to remove oneself from the linked list
-	void inline unlink()
-	{
-		if(!next)
-			return;
-
-		next->prev = prev;
-		prev->next = next;
-
-		if(!naive)
-			return;
-
-		// last in ring?
-		if(this == next)
-			delete naive;
-
-		naive = NULL;
-	}
+private:
+	// pointer to an atomic raw pointer
+	std::shared_ptr<std::atomic<T*>> m_pointer;
 
 public:
 
-	// use as pointer, checking validity
-	inline T* operator ->()
+	szp() = default;
+	explicit szp(T* target) : m_pointer{std::make_shared<std::atomic<T*>>(target)} {}
+
+	// this should never be used
+	// spawn from other pointers, or use init()
+	szp& operator=(T* other) = delete;
+
+	szp(const szp&) = default;
+	szp(szp&&) noexcept = default;
+
+	szp& operator=(const szp&) = default;
+	szp& operator=(szp&&) noexcept = default;
+
+	friend std::hash<szp<T>>;
+
+	friend void swap(szp& lhs, szp& rhs) noexcept
 	{
-		if(!naive || !*naive)
-			throw CRecoverableError(M_GetStacktrace("szp pointer was NULL:"));
-
-		return *naive;
-	}
-
-	const inline T* operator ->() const
-	{
-		if(!naive || !*naive)
-			throw CRecoverableError(M_GetStacktrace("szp pointer was NULL:"));
-
-		return *naive;
-	}
-
-	// use as raw pointer
-	inline operator T*()
-	{
-		if(!naive)
-			return NULL;
-		else
-			return *naive;
-	}
-
-	// use as raw pointer
-	inline operator const T*() const
-	{
-		if(!naive)
-			return NULL;
-		else
-			return *naive;
-	}
-
-	// this function can update or zero all related pointers
-	void update_all(T *target)
-	{
-		if(!naive)
-			throw CRecoverableError(M_GetStacktrace("szp pointer was NULL on update_all:"));
-
-		// all copies already have naive, so their pointers will update too
-		*naive = target;
-	}
-
-	// copy a pointer and add self to the "i have this pointer" list
-	inline szp &operator =(szp other)
-	{
-		// itself?
-		if(&other == this || other.naive == naive)
-			return *this;
-
-		unlink();
-
-		if(!other.prev || !other.next || !other.naive)
-		{
-			next = prev = this;
-			return *this;
-		}
-
-		// link
-		naive = other.naive;
-		prev = other.next->prev;
-		next = other.next;
-		prev->next = next->prev = this;
-
-		return *this;
+		using std::swap;
+		swap(lhs.m_pointer,  rhs.m_pointer);
 	}
 
 	// creates the first (original) pointer
 	void init(T *target)
 	{
-		unlink();
-
-		// first link
-		naive = new T*(target);
-		prev = next = this;
+		m_pointer = std::make_shared<std::atomic<T*>>(target);
 	}
 
-	// cheap constructor
-	inline szp()
-		: naive(NULL), prev(NULL), next(NULL)
-	{ }
-
-	// copy constructor
-	inline szp(const szp &other)
-		: naive(NULL)
+	// this function can update or zero all related pointers
+	void update_all(T *target)
 	{
-		if(!other.prev || !other.next || !other.naive)
-		{
-			prev = next = this;
-			return;
-		}
+		if (not m_pointer)
+			throw CRecoverableError(M_GetStacktrace("szp pointer was NULL on update_all:"));
 
-		// link
-		naive = other.naive;
-		prev = other.next->prev;
-		next = other.next;
-		prev->next = next->prev = this;
+		// all copies already have naive, so their pointers will update too
+		m_pointer->store(target, std::memory_order_relaxed);
 	}
 
-	// unlink from circular list on destruction
-	inline ~szp()
+	// use this instead of std::atomic's operator T because we want relaxed memory order
+	T* get() const noexcept
+    {
+        if (not m_pointer)
+            return nullptr;
+
+        return m_pointer->load(std::memory_order_relaxed);
+    }
+
+	// use as pointer, checking validity
+	T* operator->()
 	{
-		unlink();
+		T* ptr = get();
+		if (not ptr)
+			throw CRecoverableError(M_GetStacktrace("szp pointer was NULL:"));
+
+		return ptr;
+	}
+
+	const T* operator->() const
+	{
+		const T* ptr = get();
+		if (not ptr)
+			throw CRecoverableError(M_GetStacktrace("szp pointer was NULL:"));
+
+		return ptr;
+	}
+
+	// use as raw pointer
+	operator T*() noexcept
+	{
+		return get();
+	}
+
+	// use as raw pointer
+	operator const T*() const noexcept
+	{
+		return get();
+	}
+
+	static constexpr auto POINTER_ALIGNMENT = alignof(std::atomic<T*>);
+	static constexpr auto POINTER_ALIGNMENT_BITS = std::countr_zero(POINTER_ALIGNMENT);
+};
+
+// The specializations of std::hash for szp shift off the known-zero LSBs of the naive pointer
+// because we want to make sure that modulus-based bucket selection for unordered_set and the
+// like don't accidentally pile everything up in a single bucket.
+
+template <typename T>
+struct std::hash<szp<T>>
+{
+	size_t operator()(const szp<T>& objPtr) const noexcept
+	{
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+		return reinterpret_cast<std::uintptr_t>(objPtr.m_pointer.get()) >> szp<T>::POINTER_ALIGNMENT_BITS;
 	}
 };

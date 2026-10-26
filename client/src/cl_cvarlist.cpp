@@ -24,7 +24,9 @@
 
 #include "odamex.h"
 
+#include "am_map.h"
 #include "s_sound.h"
+#include "i_input.h"
 #include "i_music.h"
 
 // Automap
@@ -56,6 +58,17 @@ CVAR(					am_showtime, "1", "",
 
 CVAR(					am_classicmapstring, "0", "",
 						CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
+
+
+CVAR_RANGE(am_showauthor, "2",
+		"How the map author is shown on the automap.\n"
+		"// 0 - Off\n"
+		"// 1 - Static\n"
+		"// 2 - Fade in/out with map name\n"
+		"// 3 - Marquee in/out with map name\n"
+		"// 4 - Teletype effect with map name",
+		CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE,
+		AM_AUTHOR_OFF, AM_AUTHOR_TELETYPE)
 
 CVAR(					am_usecustomcolors, "0", "",
 						CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
@@ -186,10 +199,8 @@ CVAR(					am_ovbackcolor, "00 00 00", "Overlay minimap background color",
 CVAR_RANGE(				am_ovbackalpha, "0.25", "Transparency of overlay minimap background",
 						CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 1.0f)
 
-CVAR_RANGE(				am_ovscalewidth, "0.25", "Scale width of overlay minimap",
-						CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 1.0f)
-
-CVAR_RANGE(				am_ovscaleheight, "0.5", "Scale height of overlay minimap",
+CVAR_RANGE(				am_ovscalesize, "0.25", "Scale size of overlay minimap",
+						// NOLINTNEXTLINE(readability-magic-numbers) - cvar range
 						CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 1.0f)
 
 CVAR_RANGE(				am_ovlocation, "1", "Overlay minimap location (0:LeftTop, 1:LeftMid, 2:LeftBot, 3:RightTop, 4:RightMid, 5:RightBot)",
@@ -270,6 +281,9 @@ CVAR_RANGE_FUNC_DECL(ui_transgreen, "0", "",
 
 CVAR_RANGE_FUNC_DECL(ui_transblue, "0", "",
 					CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 255.0f)
+
+CVAR(				ui_mouse, "1", "Navigate the menus and console with the mouse",
+					CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
 // Init settings
 // -------------
 
@@ -345,6 +359,13 @@ CVAR (joy_invert, "0", "", CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE)
 
 CVAR_RANGE (joy_deadzone, "0.20", "", CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE,  0.0f, 0.75f)
 
+CVAR_RANGE(joy_gamepadmode, "0",
+		"Sets the behavior of on-screen prompts of when to name gamepad buttons instead of keyboard keys.\n"
+		"// 0 - Follow whichever device was used last\n"
+		"// 1 - Mouse input does not switch away from the gamepad\n"
+		"// 2 - Always show gamepad keys",
+		CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, GAMEPADMODE_AUTO, GAMEPADMODE_ALWAYS)
+
 CVAR_RANGE(joy_lefttrigger_deadzone, "0.2", "Sets the required pressure to trigger a press on the left trigger (Analog controllers only)",
 					CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.01f, 1.0f)
 
@@ -387,26 +408,36 @@ CVAR(cl_downloadsites,
      "with ZIP.",
      CVARTYPE_STRING, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
 
-CVAR_RANGE_FUNC_DECL(cl_interp, "1", "Interpolate enemy player positions",
-					CVARTYPE_INT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 4.0f)
+CVAR_RANGE_FUNC_DECL(cl_interp, "1",
+                    "Interpolate enemy player positions",
+                    CVARTYPE_INT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 4.0f)
 
-CVAR_RANGE(			cl_prednudge,	"0.70", "Smooth out collisions",
-					CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.05f, 1.0f)
+CVAR_RANGE(cl_prednudge, "0.70",
+            "Smooth out collisions",
+            CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.05f, 1.0f)
 
-CVAR(				cl_predictweapons, "1", "Draw weapon effects immediately",
-					CVARTYPE_BOOL, CVAR_USERINFO | CVAR_CLIENTARCHIVE)
+CVAR(cl_predictweapons, "1",
+    "Draw weapon effects immediately",
+    CVARTYPE_BOOL, CVAR_USERINFO | CVAR_CLIENTARCHIVE)
 
-CVAR(				cl_netgraph, "0", "Show a graph of network related statistics",
-					CVARTYPE_BOOL, CVAR_NULL)
+CVAR(cl_netgraph, "0",
+    "Show a graph of network related statistics",
+     CVARTYPE_BOOL, CVAR_NULL)
 
-CVAR(				cl_serverdownload, "1", "Enable or disable downloading game files and resources from the internet " \
-											"(see cl_downloadsites for more information)",
-					CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
+CVAR(cl_serverdownload, "1",
+    "Enable or disable downloading game files and resources from the internet "
+    "(see cl_downloadsites for more information)",
+    CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
 
-CVAR(				cl_forcedownload, "0", "Forces the client to download the last WAD file when connecting " \
-											"to a server, even if the client already has that file " \
-											"(requires developer 1).",
-					CVARTYPE_BOOL, CVAR_NULL)
+CVAR(cl_forcedownload, "0",
+    "Forces the client to download the last WAD file when connecting "
+    "to a server, even if the client already has that file "
+    "(requires developer 1).",
+    CVARTYPE_BOOL, CVAR_NULL)
+
+CVAR(netdebug_automap, "0",
+    "Enables display of various netcode debugging information on the automap.  Requires iddt level 2 cheat.",
+    CVARTYPE_BOOL, CVAR_NULL)
 
 // Client Preferences
 // ------------------
@@ -420,13 +451,13 @@ CVAR_FUNC_DECL(		cl_name, "Player", "",
 #endif
 
 CVAR(				cl_color, "40 cf 00", "",
-					CVARTYPE_STRING, CVAR_USERINFO | CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
+					CVARTYPE_STRING, CVAR_USERINFO | CVAR_NOENABLEDISABLE | CVAR_NOSET)
 
-CVAR(				cl_customcolor, "40 cf 00", "",
-					CVARTYPE_STRING, CVAR_CLIENTARCHIVE)
+CVAR_FUNC_DECL(		cl_customcolor, "40 cf 00", "",
+					CVARTYPE_STRING, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
 
 CVAR(				cl_colorpreset, "custom", "",
-					CVARTYPE_STRING, CVAR_CLIENTARCHIVE)
+					CVARTYPE_STRING, CVAR_USERINFO | CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
 
 CVAR(				cl_gender, "male", "",
 					CVARTYPE_STRING, CVAR_USERINFO | CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
@@ -604,6 +635,14 @@ CVAR(			hud_timer, "1", "Show the HUD timer:\n// 0: No Timer\n// 1: Count-down T
 
 CVAR(hud_speedometer, "0", "Show the HUD speedometer", CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
 
+CVAR(			cl_shotclock, "0", "Show tenths of a second on all HUD timers, starting when the timer reaches cl_shotclocksecondsleft.",
+				CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
+
+CVAR_RANGE(		cl_shotclocksecondsleft, "10", "Seconds left before a HUD timer starts displaying " \
+				"tenths of a second, if cl_shotclock is enabled",
+				// NOLINTNEXTLINE(readability-magic-numbers) - cvar range
+				CVARTYPE_INT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 60.0f)
+
 CVAR_RANGE(		hud_transparency, "1.0", "HUD transparency",
 				CVARTYPE_FLOAT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 1.0f)
 
@@ -701,37 +740,6 @@ CVAR_RANGE_FUNC_DECL(	snd_oplchips, "6", "Number of emulated OPL chips",
 CVAR_RANGE_FUNC_DECL(	snd_oplbank, "1", "OPL instrument set",
 				CVARTYPE_INT, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 2.0f)
 
-//
-// C_GetDefaultMuiscSystem()
-//
-// Allows the default value for snd_musicsystem to change depending on
-// compile-time factors (eg, OS)
-//
-static char *C_GetDefaultMusicSystem()
-{
-	static char str[4];
-
-	MusicSystemType defaultmusicsystem = MS_SDLMIXER;
-	#ifdef OSX
-	defaultmusicsystem = MS_AUDIOUNIT;
-	#endif
-
-	#if defined _WIN32
-	defaultmusicsystem = MS_PORTMIDI;
-	#endif
-
-	#ifdef __linux__
-	defaultmusicsystem = MS_LIBADLMIDI;
-	#endif
-
-	// don't overflow str
-	if (int(defaultmusicsystem) > 999 || int(defaultmusicsystem) < 0)
-		defaultmusicsystem = MS_NONE;
-
-	snprintf(str, 4, "%i", defaultmusicsystem);
-	return str;
-}
-
 CVAR(			snd_midisysex, "0", "Read SysEx from MIDI files (0: Disable, 1: Enable)",
 				CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
 
@@ -744,7 +752,7 @@ CVAR_RANGE(		snd_mididelay, "0", "MIDI delay after reset (0 to 2000 milliseconds
 CVAR_RANGE(		snd_midireset, "1", "MIDI reset type (0: None, 1: GM, 2: GS, 3: XG)",
 				CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 3.0f)
 
-CVAR_FUNC_DECL(	snd_musicsystem, C_GetDefaultMusicSystem(), "Music subsystem preference",
+CVAR_FUNC_DECL(	snd_musicsystem, "255", "Music subsystem preference",
 				CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
 
 CVAR_FUNC_DECL(	snd_nomusic, "0", "Disables music",
@@ -782,6 +790,13 @@ CVAR(			r_clipmaskedspecial, "0", "Vertically clip masked midtextures when surro
 
 CVAR(			r_thingsectorlight, "0", "Things are lit according to the average of the transfered light levels (mimics MBF behavior)",
 				CVARTYPE_BOOL, CVAR_NULL)
+
+CVAR(           r_drawnetcredibility, "0", "Add a particle to each actor indicating how credible the client considers the actor's position",
+                CVARTYPE_BOOL, CVAR_NULL)
+
+CVAR_RANGE(		r_portalrecursions, "4", "Maximum depth of nested portal (skybox) views. 0 draws portal planes as regular sky.",
+				// NOLINTNEXTLINE(readability-magic-numbers) - cvar range
+				CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE, 0.0f, 16.0f)
 
 #if 0
 CVAR(			r_drawhitboxes, "0", "Draws a box outlining every actor's hitboxes",
@@ -838,9 +853,6 @@ CVAR_FUNC_DECL(	vid_defheight, "720", "",
 
 CVAR_FUNC_DECL(	vid_widescreen, "1", "Widescreen mode (0: Off, 1: Auto, 2: 16:10, 3: 16:9, 4: 21:9, 5: 32:9)",
 				CVARTYPE_BYTE, CVAR_CLIENTARCHIVE | CVAR_NOENABLEDISABLE)
-
-CVAR_FUNC_DECL(	vid_pillarbox, "0", "Pillarbox 4:3 resolutions in widescreen",
-				CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)
 
 CVAR(			vid_autoadjust, "1", "Force fullscreen resolution to the closest available video mode.",
 				CVARTYPE_BOOL, CVAR_CLIENTARCHIVE)

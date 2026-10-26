@@ -227,7 +227,7 @@ void M_LogWDLPlayerSpawn(const mapthing2_t& mthing);
 void M_RemoveWDLPlayerSpawn(const mapthing2_t& mthing);
 void M_LogWDLItemRespawnEvent(AActor* activator);
 void M_LogWDLFlagLocation(const mapthing2_t& activator, team_t team);
-void M_LogWDLPickupEvent(const player_t* activator, AActor* target, WDLPowerups pickuptype, bool dropped);
+void M_LogWDLPickupEvent(const player_t* activator, AActor* target, WDLPowerups pickuptype, OUtil::SafeBool dropped);
 // Call at the top of pickup handling (P_GiveSpecial) with the player's health
 // BEFORE the pickup is applied. The next M_LogWDLPickupEvent computes the heal
 // delta from it (engine ground truth) for healthFrom{Power,NonPower}Pickups.

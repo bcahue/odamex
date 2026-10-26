@@ -791,7 +791,7 @@ void SV_ApiUploadMatchStats(const std::string& statsPayloadJson, int64_t started
 	s_cv.notify_one();
 }
 
-void STACK_ARGS SV_ApiShutdown()
+void SV_ApiShutdown()
 {
 	if (!s_running)
 		return;

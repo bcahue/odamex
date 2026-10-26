@@ -59,4 +59,4 @@ void SV_ApiUploadMatchStats(const std::string& statsPayloadJson, int64_t started
 
 // Stops the worker thread (draining any in-flight queue best-effort) and
 // releases resources. Registered via atterm.
-void STACK_ARGS SV_ApiShutdown();
+void SV_ApiShutdown();

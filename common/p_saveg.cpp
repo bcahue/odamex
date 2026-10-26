@@ -33,6 +33,7 @@
 #include "r_state.h"
 #include "m_random.h"
 #include "v_palette.h"
+#include "s_sound.h"
 
 //
 // P_ArchivePlayers
@@ -42,15 +43,20 @@ void P_SerializePlayers (FArchive &arc)
 	if (arc.IsStoring ())
 	{
 		for (const auto& player : players)
-			arc << (int)(player.playerstate);
+		{
+			if (not player.isFreecam) // dont serialize the freecam
+			{
+				arc << static_cast<int>(player.playerstate);
+			}
+		}
 	}
 	else
 	{
-		int playerstate = (playerstate_t)0;
+		int playerstate = static_cast<playerstate_t>(0);
 		for (auto& player : players)
 		{
 			arc >> playerstate;
-			player.playerstate = (playerstate_t)playerstate;
+			player.playerstate = static_cast<playerstate_t>(playerstate);
 		}
 	}
 
@@ -72,8 +78,8 @@ void P_SerializeWorld (FArchive &arc)
 		// do sectors
 		for (sector_t& sec : R_GetSectors())
 		{
-			arc << sec.floorheight
-				<< sec.ceilingheight
+			arc << sec.floortexz
+				<< sec.ceilingtexz
 				<< sec.floorplane.a
 				<< sec.floorplane.b
 				<< sec.floorplane.c
@@ -130,7 +136,8 @@ void P_SerializeWorld (FArchive &arc)
 				<< sec.alwaysfake
 				<< sec.waterzone
 				<< sec.SecActTarget
-				<< sec.Skybox
+				<< sec.SkyboxCeiling
+				<< sec.SkyboxFloor
 				<< sec.MoreFlags;
 		}
 
@@ -141,7 +148,7 @@ void P_SerializeWorld (FArchive &arc)
 				<< line.special
 				<< line.lucency
 				<< line.id
-				<< line.args[0] << line.args[1] << line.args[2] << line.args[3] << line.args[4] << (uint16_t)0;
+				<< line.args[0] << line.args[1] << line.args[2] << line.args[3] << line.args[4] << 0_u16;
 
 			for (int i = 0; i < 2; i++)
 			{
@@ -164,10 +171,11 @@ void P_SerializeWorld (FArchive &arc)
 		for (sector_t& sec : R_GetSectors())
 		{
 			AActor* SecActTarget;
-			AActor* Skybox;
+			AActor* SkyboxCeiling;
+			AActor* SkyboxFloor;
 
-			arc >> sec.floorheight
-				>> sec.ceilingheight
+			arc >> sec.floortexz
+				>> sec.ceilingtexz
 				>> sec.floorplane.a
 				>> sec.floorplane.b
 				>> sec.floorplane.c
@@ -229,7 +237,8 @@ void P_SerializeWorld (FArchive &arc)
 			arc >> sec.alwaysfake
 				>> sec.waterzone
 				>> SecActTarget
-				>> Skybox
+				>> SkyboxCeiling
+				>> SkyboxFloor
 				>> sec.MoreFlags;
 
 			sec.floorplane.invc = FixedDiv(FRACUNIT, sec.floorplane.c);
@@ -237,7 +246,8 @@ void P_SerializeWorld (FArchive &arc)
 			sec.ceilingplane.invc = FixedDiv(FRACUNIT, sec.ceilingplane.c);
 			sec.ceilingplane.sector = &sec;
 			sec.SecActTarget.init(SecActTarget);
-			sec.Skybox.init(Skybox);
+			sec.SkyboxCeiling.init(SkyboxCeiling);
+			sec.SkyboxFloor.init(SkyboxFloor);
 		}
 
 		// do lines
@@ -279,7 +289,7 @@ void P_SerializeThinkers (FArchive &arc, bool hubLoad)
 //
 void P_SerializeSounds (FArchive &arc)
 {
-	// denis - todo
+	P_SerializeMusic(arc);
 }
 
 //
@@ -294,7 +304,7 @@ void P_SerializePolyobjs (FArchive &arc)
 
 	if (arc.IsStoring ())
 	{
-		arc << (int)ASEG_POLYOBJS << po_NumPolyobjs;
+		arc << static_cast<int>(ASEG_POLYOBJS) << po_NumPolyobjs;
 		for(i = 0, po = polyobjs; i < po_NumPolyobjs; i++, po++)
 		{
 			arc << po->tag << po->angle << po->startSpot[0] <<

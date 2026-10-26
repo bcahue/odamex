@@ -48,11 +48,6 @@ void P_SetPillarDestroy(DPillar *pillar)
 
 IMPLEMENT_SERIAL (DPillar, DMover)
 
-DPillar::DPillar () :
-	m_Status(init)
-{
-}
-
 void DPillar::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
@@ -242,13 +237,13 @@ bool EV_DoZDoomPillar(DPillar::EPillar type, line_t* line, int tag, fixed_t spee
 	{
 		sector_t* sec = &sectors[secnum];
 
-		if (P_FloorActive(sec) || P_CeilingActive(sec))
+		if (P_FloorActive(sec) or P_CeilingActive(sec))
 			continue;
 
-		if (type == DPillar::pillarBuild && sec->floorheight == sec->ceilingheight)
+		if (type == DPillar::pillarBuild and P_FloorHeight(sec) == P_CeilingHeight(sec))
 			continue;
 
-		if (type == DPillar::pillarOpen && sec->floorheight != sec->ceilingheight)
+		if (type == DPillar::pillarOpen and P_FloorHeight(sec) != P_CeilingHeight(sec))
 			continue;
 
 		rtn = true;
